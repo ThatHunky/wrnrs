@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "cards": [
+    {"id":"q001","level":1,"tags":["warmup"],"mode":"both_players","text":{"uk":"Опиши мій запах. Обидва гравці.","en":"Describe my scent. Both players."}},
+    {"id":"q002","level":1,"tags":["warmup"],"mode":"both_players","text":{"uk":"Якби ти був тваринкою — якою і чому?","en":"If you were an animal, which one and why?"}},
+    {"id":"q003","level":1,"tags":["warmup"],"mode":"both_players","text":{"uk":"Яка твоя guilty pleasure пісня?","en":"What is your guilty pleasure song?"}},
+    {"id":"q004","level":1,"tags":["warmup"],"mode":"both_players","text":{"uk":"Що тебе найбільше дратує, але смішить у мені?","en":"What about me annoys you most but also makes you laugh?"}},
+    {"id":"q005","level":1,"tags":["warmup"],"mode":"both_players","text":{"uk":"Яка була твоя улюблена гра в дитинстві?","en":"What was your favorite childhood game?"}},
+    {"id":"q006","level":1,"tags":["warmup"],"mode":"both_players","text":{"uk":"Як ти проводив ідеальні літні канікули?","en":"What were your ideal summer holidays like?"}},
+    {"id":"q007","level":2,"tags":["relationship"],"mode":"both_players","text":{"uk":"Що для тебе найважливіше у стосунках?","en":"What is most important to you in a relationship?"}},
+    {"id":"q008","level":2,"tags":["love_languages"],"mode":"both_players","text":{"uk":"Як ти відчуваєш, що тебе люблять?","en":"How do you know you are loved?"}},
+    {"id":"q009","level":2,"tags":["past_relationships"],"mode":"both_players","text":{"uk":"Чого тебе навчили твої минулі стосунки?","en":"What did your past relationships teach you?"}},
+    {"id":"q010","level":2,"tags":["conflict"],"mode":"both_players","text":{"uk":"Як ти реагуєш, коли відчуваєш себе непочутим?","en":"How do you react when you feel unheard?"}},
+    {"id":"q011","level":2,"tags":["self_reflection"],"mode":"both_players","text":{"uk":"Яка частина твоєї особистості тобі найбільше подобається?","en":"What part of your personality do you like most?"}},
+    {"id":"q012","level":2,"tags":["future"],"mode":"both_players","text":{"uk":"Як виглядає твій ідеальний день зі мною?","en":"What does your ideal day with me look like?"}},
+    {"id":"q013","level":2,"tags":["support"],"mode":"both_players","text":{"uk":"Як ти зазвичай підтримуєш близьку людину в стресі?","en":"How do you usually support someone close to you under stress?"}},
+    {"id":"q014","level":3,"tags":["family"],"mode":"both_players","text":{"uk":"Як твої батьки ставляться до твого партнера?","en":"How do your parents feel about your partner?"}},
+    {"id":"q015","level":3,"tags":["support"],"mode":"both_players","text":{"uk":"Чи важко вам підтримувати один одного і чому?","en":"Is it hard for you to support each other, and why?"}},
+    {"id":"q016","level":2,"tags":["intimacy"],"mode":"both_players","text":{"uk":"Що для тебе — справжня близькість?","en":"What does true intimacy mean to you?"}},
+    {"id":"q017","level":2,"tags":["conflict"],"mode":"both_players","text":{"uk":"Що ти хочеш, щоб я завжди знала/знав, навіть коли ми сваримось?","en":"What do you want me to always know, even when we fight?"}},
+    {"id":"q018","level":2,"tags":["values"],"mode":"both_players","text":{"uk":"Якби ти міг залишити лише одну цінність у житті — що б це було?","en":"If you could keep only one value in life, what would it be?"}},
+    {"id":"q019","level":3,"tags":["intimacy"],"mode":"both_players","text":{"uk":"Що тебе лякає у близькості?","en":"What scares you about intimacy?"}},
+    {"id":"q020","level":3,"tags":["honesty"],"mode":"both_players","text":{"uk":"Що тобі не подобається в партнері (вигляд, характер, поведінка)?","en":"What do you dislike in a partner: looks, character, or behavior?"}},
+    {"id":"q021","level":3,"tags":["trauma"],"mode":"both_players","text":{"uk":"Який ваш найбільш травматичний досвід у стосунках?","en":"What has been your most traumatic experience in relationships?"}},
+    {"id":"q022","level":3,"tags":["mature","sex"],"requires_mature_opt_in":true,"mode":"both_players","text":{"uk":"Чи є щось у темі сексу, про що ти хотів/хотіла би поговорити, але соромишся?","en":"Is there anything about sex you want to discuss but feel embarrassed about?"}},
+    {"id":"q023","level":3,"tags":["mature","sex"],"requires_mature_opt_in":true,"mode":"both_players","text":{"uk":"Що для тебе більше в сексі — пристрасть чи близькість?","en":"What matters more to you in sex: passion or intimacy?"}},
+    {"id":"q024","level":3,"tags":["jealousy"],"mode":"both_players","text":{"uk":"Чи боїшся ти, що я можу ревнувати до твого минулого?","en":"Are you afraid I might be jealous of your past?"}},
+    {"id":"q025","level":3,"tags":["boundaries"],"mode":"both_players","text":{"uk":"Що ти ніколи не пробачиш у стосунках?","en":"What would you never forgive in a relationship?"}},
+    {"id":"q026","level":3,"tags":["future"],"mode":"both_players","text":{"uk":"Уяви нас через 5 років — де ми, що робимо?","en":"Imagine us in five years: where are we, and what are we doing?"}},
+    {"id":"q027","level":3,"tags":["safety"],"mode":"both_players","text":{"uk":"Чи відчуваєш ти себе у безпеці поруч зі мною? Чому?","en":"Do you feel safe with me? Why?"}},
+    {"id":"q028","level":3,"tags":["self_reflection"],"mode":"both_players","text":{"uk":"У чому ти найбільше сумніваєшся в собі, коли справа стосується наших стосунків?","en":"What do you doubt most about yourself when it comes to our relationship?"}},
+    {"id":"q029","level":3,"tags":["love_languages"],"mode":"both_players","text":{"uk":"Що я роблю (або не роблю), що змушує тебе почуватись не коханим/коханою?","en":"What do I do, or not do, that makes you feel unloved?"}},
+    {"id":"q030","level":3,"tags":["conflict"],"mode":"both_players","text":{"uk":"Як ти бачиш “ідеальні” сварки — якщо вони взагалі бувають?","en":"What do “ideal” fights look like to you, if they exist at all?"}},
+    {"id":"q031","level":3,"tags":["fear"],"mode":"both_players","text":{"uk":"Які слова ти боїшся почути від мене?","en":"What words are you afraid to hear from me?"}},
+    {"id":"q032","level":3,"tags":["intimacy"],"mode":"both_players","text":{"uk":"Коли ти відчуваєш, що найближчий/найближча до мене?","en":"When do you feel closest to me?"}}
+  ]
+}
+

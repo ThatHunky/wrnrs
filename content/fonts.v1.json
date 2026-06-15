@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "fonts": [
+    {
+      "id": "nunito_regular",
+      "name": {"uk": "Nunito", "en": "Nunito"},
+      "path": "assets/fonts/Nunito/static/Nunito-Regular.ttf",
+      "premium": false,
+      "category": "rounded"
+    },
+    {
+      "id": "google_sans_regular",
+      "name": {"uk": "Google Sans", "en": "Google Sans"},
+      "path": "assets/fonts/Google_Sans/static/GoogleSans-Regular.ttf",
+      "premium": true,
+      "category": "clean"
+    },
+    {
+      "id": "roboto_slab_regular",
+      "name": {"uk": "Roboto Slab", "en": "Roboto Slab"},
+      "path": "assets/fonts/Roboto_Slab/static/RobotoSlab-Regular.ttf",
+      "premium": true,
+      "category": "serif"
+    },
+    {
+      "id": "caveat_regular",
+      "name": {"uk": "Caveat", "en": "Caveat"},
+      "path": "assets/fonts/Caveat/static/Caveat-Regular.ttf",
+      "premium": true,
+      "category": "handwritten"
+    },
+    {
+      "id": "pacifico_regular",
+      "name": {"uk": "Pacifico", "en": "Pacifico"},
+      "path": "assets/fonts/Pacifico/Pacifico-Regular.ttf",
+      "premium": true,
+      "category": "display"
+    }
+  ]
+}

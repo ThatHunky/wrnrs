@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "styles": [
+    {
+      "id": "default_warm",
+      "name": {"uk": "Теплий базовий", "en": "Warm Basic"},
+      "premium": false,
+      "tokens": {
+        "border_radius": 30,
+        "glass_opacity": 0.62,
+        "default_color": "#d98c9f"
+      }
+    },
+    {
+      "id": "premium_velvet",
+      "name": {"uk": "Оксамит", "en": "Velvet"},
+      "premium": true,
+      "tokens": {
+        "border_radius": 34,
+        "glass_opacity": 0.55,
+        "default_color": "#8f3f5f"
+      }
+    }
+  ]
+}
+

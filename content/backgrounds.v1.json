@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "backgrounds": [
+    {
+      "id": "builtin_blush_gradient",
+      "kind": "built_in",
+      "premium": false,
+      "name": {"uk": "Рум'яний градієнт", "en": "Blush Gradient"},
+      "object_key": "built-ins/blush-gradient.webp"
+    },
+    {
+      "id": "builtin_candle_glow",
+      "kind": "built_in",
+      "premium": true,
+      "name": {"uk": "Світло свічок", "en": "Candle Glow"},
+      "object_key": "built-ins/candle-glow.webp"
+    }
+  ]
+}

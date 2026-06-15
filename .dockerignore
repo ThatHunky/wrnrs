@@ -1,0 +1,13 @@
+.git/
+.env
+.data/
+dist/
+tmp/
+temp/
+wrnrs
+*.test
+coverage.out
+coverage.html
+.worktrees/
+worktrees/
+*.log
