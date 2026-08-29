@@ -83,6 +83,68 @@ func TestItemLookup(t *testing.T) {
 	}
 }
 
+// TestItemAndFilteredAliasCatalogOwnedData pins the documented contract on
+// Catalog, Item and Filtered: the returned Item is a shallow copy whose
+// Facets map, Tags slice, Text map and Media pointer still alias
+// catalog-owned data. This is deliberate (a deep copy is too costly at
+// hundreds of items per draw), but it means callers must treat every
+// returned Item as read-only. This test exists so a future change to that
+// contract — in either direction — has to touch this test on purpose
+// instead of drifting silently.
+func TestItemAndFilteredAliasCatalogOwnedData(t *testing.T) {
+	media := catalog.MediaRef{Key: "positions/1.jpg"}
+	c := catalog.Catalog{
+		Kind:    "positions",
+		Version: 1,
+		Items: []catalog.Item{
+			{
+				ID:     "1",
+				Facets: map[string][]string{"level": {"easy"}},
+				Tags:   []string{"starter_100"},
+				Text:   map[string]catalog.ItemText{"uk": {Title: "перша"}},
+				Media:  &media,
+			},
+		},
+	}
+
+	item, ok := c.Item("1")
+	if !ok {
+		t.Fatal("Item(1) not found")
+	}
+
+	// Mutate every reference-typed field through the value Item() handed
+	// back.
+	item.Facets["level"][0] = "mutated-facet"
+	item.Tags[0] = "mutated-tag"
+	item.Text["uk"] = catalog.ItemText{Title: "mutated-title"}
+	item.Media.Key = "mutated-key"
+
+	// A fresh Item() lookup must see every mutation: the fields alias the
+	// catalog's own data rather than being copied.
+	again, _ := c.Item("1")
+	if again.Facets["level"][0] != "mutated-facet" {
+		t.Fatalf("Facets = %v, want the mutation visible through aliasing", again.Facets)
+	}
+	if again.Tags[0] != "mutated-tag" {
+		t.Fatalf("Tags = %v, want the mutation visible through aliasing", again.Tags)
+	}
+	if again.Text["uk"].Title != "mutated-title" {
+		t.Fatalf("Text[uk] = %+v, want the mutation visible through aliasing", again.Text["uk"])
+	}
+	if again.Media.Key != "mutated-key" {
+		t.Fatalf("Media.Key = %q, want the mutation visible through aliasing", again.Media.Key)
+	}
+
+	// Filtered must alias the same underlying data, not a copy of its own.
+	filtered := c.Filtered(catalog.Filter{})
+	if len(filtered) != 1 {
+		t.Fatalf("Filtered = %d items, want 1", len(filtered))
+	}
+	if filtered[0].Tags[0] != "mutated-tag" {
+		t.Fatalf("Filtered()[0].Tags = %v, want the same mutation visible through Filtered", filtered[0].Tags)
+	}
+}
+
 func testFilterCatalog() catalog.Catalog {
 	return catalog.Catalog{
 		Kind:    "positions",
@@ -234,6 +296,42 @@ func TestSelectNextAvoidsSeenItemsUntilExhaustedThenStartsNextCycle(t *testing.T
 		t.Fatal("exhausted draw returned an empty item")
 	}
 	_ = first
+}
+
+// TestSelectNextExhaustedRefillReusesTheDeterministicShuffle pins the
+// exhausted-refill branch to the same shuffle a fresh draw would use, not
+// to the raw item order. Without this, an implementation that refills with
+// `in.Items[0]` unshuffled on exhaustion passes every other SelectNext test
+// — but a pair who has seen everything would then get the same item first,
+// forever, instead of a reshuffled deck.
+func TestSelectNextExhaustedRefillReusesTheDeterministicShuffle(t *testing.T) {
+	items := []catalog.Item{{ID: "a"}, {ID: "b"}, {ID: "c"}, {ID: "d"}}
+
+	seen := map[string]bool{"a": true, "b": true, "c": true, "d": true}
+	exhausted, cycle, wasExhausted, err := catalog.SelectNext(catalog.SelectionInput{
+		SeedID: 1, Bucket: "positions", Cycle: 0, Items: items, Seen: seen,
+	})
+	if err != nil {
+		t.Fatalf("SelectNext (exhausted) returned error: %v", err)
+	}
+	if cycle != 1 || !wasExhausted {
+		t.Fatalf("exhausted draw cycle=%d exhausted=%v, want 1 and true", cycle, wasExhausted)
+	}
+
+	fresh, freshCycle, freshExhausted, err := catalog.SelectNext(catalog.SelectionInput{
+		SeedID: 1, Bucket: "positions", Cycle: 1, Items: items,
+	})
+	if err != nil {
+		t.Fatalf("SelectNext (fresh cycle 1) returned error: %v", err)
+	}
+	if freshCycle != 1 || freshExhausted {
+		t.Fatalf("fresh cycle-1 draw cycle=%d exhausted=%v, want 1 and false", freshCycle, freshExhausted)
+	}
+
+	if exhausted.ID != fresh.ID {
+		t.Fatalf("exhausted refill picked %q but a fresh Cycle:1 draw with the same SeedID and Bucket picks %q; "+
+			"the refill must reuse the same deterministic shuffle seed, not the raw item order", exhausted.ID, fresh.ID)
+	}
 }
 
 func TestSelectNextSkipsSeenItems(t *testing.T) {

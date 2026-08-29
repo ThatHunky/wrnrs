@@ -216,6 +216,35 @@ func TestDispatchModuleMessageStopsAtTheFirstConsumer(t *testing.T) {
 	}
 }
 
+func TestDispatchModuleMessageReportsNotHandledWhenTheOnlyModuleDeclines(t *testing.T) {
+	a, _, _ := newTestApp(t)
+	ctx := context.Background()
+	handler := &recordingModuleHandler{consume: false}
+	registerTestModule(t, a, modules.Gate{}, handler)
+
+	const userID = int64(4108)
+	if err := a.repo.UpsertUser(ctx, storage.User{TelegramID: userID, DisplayName: "Тест", Language: "uk"}); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	msg := &telegram.Message{
+		MessageID: 1,
+		Text:      "привіт",
+		From:      &telegram.User{ID: userID},
+		Chat:      telegram.Chat{ID: userID},
+	}
+	handled, err := a.dispatchModuleMessage(ctx, msg)
+	if err != nil {
+		t.Fatalf("dispatchModuleMessage: %v", err)
+	}
+	if handled {
+		t.Fatal("dispatchModuleMessage reported handled after the only registered module declined it, want not handled — the caller must fall through to sendMainMenu")
+	}
+	if len(handler.messages) != 1 {
+		t.Fatalf("handler messages = %v, want one entry — the module must still have been offered the message", handler.messages)
+	}
+}
+
 func TestDispatchModuleMessageReportsHandledWhenHandlerErrors(t *testing.T) {
 	a, _, _ := newTestApp(t)
 	ctx := context.Background()
@@ -305,5 +334,34 @@ func TestMainMenuKeyboardAppendsModuleRowsWithLockForBlockedOnes(t *testing.T) {
 	unlockedLast := unlocked.InlineKeyboard[len(unlocked.InlineKeyboard)-1][0]
 	if strings.Contains(unlockedLast.Text, "🔒") {
 		t.Fatalf("unlocked module button text = %q, want no lock marker", unlockedLast.Text)
+	}
+}
+
+// TestSendMainMenuIncludesModuleRows pins sendMainMenu to a.mainMenuKeyboard.
+// sendMainMenu is reached from /start, the "menu" reply button and reset, so
+// if it ever goes back to calling telegram.MainMenuKeyboardWithPair directly,
+// every one of those paths silently loses its module rows again.
+func TestSendMainMenuIncludesModuleRows(t *testing.T) {
+	a, bot, _ := newTestApp(t)
+	ctx := context.Background()
+
+	const userID = int64(4202)
+	if err := a.repo.UpsertUser(ctx, storage.User{TelegramID: userID, DisplayName: "Тест", Language: "uk"}); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	registerTestModule(t, a, modules.Gate{}, nil)
+
+	if err := a.sendMainMenu(ctx, userID, "uk", "Головне меню"); err != nil {
+		t.Fatalf("sendMainMenu: %v", err)
+	}
+
+	sent := lastMessageTo(t, bot, userID)
+	markup, ok := sent.markup.(telegram.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("sendMainMenu markup = %T, want telegram.InlineKeyboardMarkup", sent.markup)
+	}
+	if !inlineKeyboardHasCallbackPrefix(markup, "demo:") {
+		t.Fatalf("sendMainMenu keyboard = %+v, want a module row with prefix demo:", markup.InlineKeyboard)
 	}
 }

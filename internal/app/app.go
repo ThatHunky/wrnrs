@@ -1851,7 +1851,7 @@ func (a *App) sendMainMenu(ctx context.Context, chatID int64, language, text str
 	} else {
 		text = strings.TrimSpace(text) + "\n\n" + menuText
 	}
-	return a.bot.SendMessage(ctx, chatID, text, telegram.MainMenuKeyboardWithPair(language, hasPair))
+	return a.bot.SendMessage(ctx, chatID, text, a.mainMenuKeyboard(ctx, chatID, language, hasPair))
 }
 
 func (a *App) advanceToAdultOnboarding(ctx context.Context, userID, chatID int64, language string, cb *telegram.CallbackQuery) error {
@@ -1878,7 +1878,7 @@ func (a *App) finishOnboarding(ctx context.Context, userID, chatID int64, langua
 	if strings.TrimSpace(prefix) != "" {
 		menuText = strings.TrimSpace(prefix) + "\n\n" + menuText
 	}
-	return a.editCallbackScreen(ctx, cb, chatID, menuText, telegram.MainMenuKeyboardWithPair(language, hasPair))
+	return a.editCallbackScreen(ctx, cb, chatID, menuText, a.mainMenuKeyboard(ctx, userID, language, hasPair))
 }
 
 func (a *App) editCallbackScreen(ctx context.Context, cb *telegram.CallbackQuery, chatID int64, text string, replyMarkup any) error {

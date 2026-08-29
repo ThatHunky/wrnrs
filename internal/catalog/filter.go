@@ -13,6 +13,11 @@ type Filter struct {
 	Tags    []string
 }
 
+// Filtered returns every item matching f, ordered lexicographically by ID —
+// not numerically. Numeric ids MUST be zero-padded to a fixed width (e.g.
+// "001".."519"); an unpadded id like "10" sorts before "2". Each returned
+// Item aliases the catalog's own Facets map, Tags slice, Text map and Media
+// pointer rather than copying them, so callers must treat it as read-only.
 func (c *Catalog) Filtered(f Filter) []Item {
 	out := make([]Item, 0, len(c.Items))
 	for _, item := range c.Items {

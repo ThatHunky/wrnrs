@@ -82,21 +82,32 @@ func TestRegisterRejectsInvalidModules(t *testing.T) {
 	if err := r.Register(modules.Module{CallbackPrefix: "pos:"}); err == nil {
 		t.Fatal("Register with empty id succeeded, want an error")
 	}
-	if err := r.Register(modules.Module{ID: "positions", CallbackPrefix: "pos"}); err == nil {
+	if err := r.Register(modules.Module{ID: "positions", TitleKey: "module.positions", CallbackPrefix: "pos"}); err == nil {
 		t.Fatal("Register with a prefix missing the trailing colon succeeded, want an error")
+	}
+}
+
+func TestRegisterRejectsInvalidTitleKey(t *testing.T) {
+	r := modules.NewRegistry()
+
+	if err := r.Register(modules.Module{ID: "positions", CallbackPrefix: "pos:"}); err == nil {
+		t.Fatal("Register with empty title key succeeded, want an error")
+	}
+	if err := r.Register(modules.Module{ID: "positions", TitleKey: "   ", CallbackPrefix: "pos:"}); err == nil {
+		t.Fatal("Register with a whitespace-only title key succeeded, want an error")
 	}
 }
 
 func TestRegisterRejectsDuplicateIDAndCollidingPrefix(t *testing.T) {
 	r := modules.NewRegistry()
-	if err := r.Register(modules.Module{ID: "positions", CallbackPrefix: "pos:"}); err != nil {
+	if err := r.Register(modules.Module{ID: "positions", TitleKey: "module.positions", CallbackPrefix: "pos:"}); err != nil {
 		t.Fatalf("first Register returned error: %v", err)
 	}
 
-	if err := r.Register(modules.Module{ID: "positions", CallbackPrefix: "other:"}); err == nil {
+	if err := r.Register(modules.Module{ID: "positions", TitleKey: "module.positions2", CallbackPrefix: "other:"}); err == nil {
 		t.Fatal("Register with a duplicate id succeeded, want an error")
 	}
-	if err := r.Register(modules.Module{ID: "favourites", CallbackPrefix: "pos:fav:"}); err == nil {
+	if err := r.Register(modules.Module{ID: "favourites", TitleKey: "module.favourites", CallbackPrefix: "pos:fav:"}); err == nil {
 		t.Fatal("Register with a colliding prefix succeeded, want an error")
 	}
 }
@@ -104,7 +115,7 @@ func TestRegisterRejectsDuplicateIDAndCollidingPrefix(t *testing.T) {
 func TestByCallbackMatchesRegisteredPrefix(t *testing.T) {
 	r := modules.NewRegistry()
 	handler := &stubHandler{}
-	if err := r.Register(modules.Module{ID: "positions", CallbackPrefix: "pos:", Handler: handler}); err != nil {
+	if err := r.Register(modules.Module{ID: "positions", TitleKey: "module.positions", CallbackPrefix: "pos:", Handler: handler}); err != nil {
 		t.Fatalf("Register returned error: %v", err)
 	}
 
@@ -117,9 +128,24 @@ func TestByCallbackMatchesRegisteredPrefix(t *testing.T) {
 	}
 }
 
+func TestByIDFindsARegisteredModuleAndMissesAnUnregisteredOne(t *testing.T) {
+	r := modules.NewRegistry()
+	if err := r.Register(modules.Module{ID: "positions", TitleKey: "module.positions", CallbackPrefix: "pos:"}); err != nil {
+		t.Fatalf("Register returned error: %v", err)
+	}
+
+	found, ok := r.ByID("positions")
+	if !ok || found.CallbackPrefix != "pos:" {
+		t.Fatalf("ByID(positions) = %+v, %v; want the positions module", found, ok)
+	}
+	if _, ok := r.ByID("dares"); ok {
+		t.Fatal("ByID(dares) matched a module, want no match")
+	}
+}
+
 func TestAllReturnsACopy(t *testing.T) {
 	r := modules.NewRegistry()
-	if err := r.Register(modules.Module{ID: "positions", CallbackPrefix: "pos:"}); err != nil {
+	if err := r.Register(modules.Module{ID: "positions", TitleKey: "module.positions", CallbackPrefix: "pos:"}); err != nil {
 		t.Fatalf("Register returned error: %v", err)
 	}
 
@@ -134,11 +160,41 @@ func TestAllReturnsACopy(t *testing.T) {
 
 func TestRegisterRejectsCollidingPrefixRegisteredInEitherOrder(t *testing.T) {
 	r := modules.NewRegistry()
-	if err := r.Register(modules.Module{ID: "favourites", CallbackPrefix: "pos:fav:"}); err != nil {
+	if err := r.Register(modules.Module{ID: "favourites", TitleKey: "module.favourites", CallbackPrefix: "pos:fav:"}); err != nil {
 		t.Fatalf("first Register with longer prefix succeeded, got error: %v", err)
 	}
 
-	if err := r.Register(modules.Module{ID: "positions", CallbackPrefix: "pos:"}); err == nil {
+	if err := r.Register(modules.Module{ID: "positions", TitleKey: "module.positions", CallbackPrefix: "pos:"}); err == nil {
 		t.Fatal("Register with shorter prefix that collides with existing longer prefix succeeded, want an error — collision must be caught regardless of registration order")
+	}
+}
+
+func TestRegisterRejectsReservedCallbackPrefix(t *testing.T) {
+	r := modules.NewRegistry()
+	if err := r.Register(modules.Module{ID: "storefront", TitleKey: "module.storefront", CallbackPrefix: "store:"}); err == nil {
+		t.Fatal("Register with the reserved store: prefix succeeded, want an error — it would silently shadow the live store screen")
+	}
+}
+
+func TestRegisterRejectsPrefixThatExtendsAReservedOne(t *testing.T) {
+	r := modules.NewRegistry()
+	if err := r.Register(modules.Module{ID: "storefront", TitleKey: "module.storefront", CallbackPrefix: "store:x:"}); err == nil {
+		t.Fatal("Register with a prefix that extends the reserved store: prefix succeeded, want an error")
+	}
+}
+
+func TestRegisterTrimsIDBeforeStoringAndComparing(t *testing.T) {
+	r := modules.NewRegistry()
+	if err := r.Register(modules.Module{ID: "pos", TitleKey: "module.pos", CallbackPrefix: "pos:"}); err != nil {
+		t.Fatalf("first Register returned error: %v", err)
+	}
+
+	if err := r.Register(modules.Module{ID: "pos ", TitleKey: "module.pos2", CallbackPrefix: "pos2:"}); err == nil {
+		t.Fatal("Register with an id that only differs by surrounding whitespace succeeded, want a duplicate-id error")
+	}
+
+	all := r.All()
+	if len(all) != 1 || all[0].ID != "pos" {
+		t.Fatalf("registered modules = %+v, want exactly one module stored with its trimmed id %q", all, "pos")
 	}
 }

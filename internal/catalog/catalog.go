@@ -30,7 +30,12 @@ type Item struct {
 	Media  *MediaRef           `json:"media,omitempty"`
 }
 
-// Catalog is one immutable content collection loaded at boot.
+// Catalog is one content collection loaded at boot. Item and Filtered do not
+// deep-copy: the returned Item's Facets map, Tags slice, Text map and Media
+// pointer alias catalog-owned data, so callers must treat every returned
+// Item as read-only. Filtered orders results lexicographically by ID, so
+// numeric ids MUST be zero-padded to a fixed width (e.g. "001".."519") —
+// otherwise they page out of numeric order.
 type Catalog struct {
 	Kind    string `json:"kind"`
 	Version int    `json:"version"`
@@ -70,6 +75,10 @@ func (c *Catalog) Validate(languages []string) error {
 	return nil
 }
 
+// Item returns the item with the given id. The returned Item aliases the
+// catalog's own Facets map, Tags slice, Text map and Media pointer — it is
+// not a deep copy. Treat it as read-only: mutating any of those fields
+// corrupts the catalog for every other reader for the process lifetime.
 func (c *Catalog) Item(id string) (Item, bool) {
 	for _, item := range c.Items {
 		if item.ID == id {

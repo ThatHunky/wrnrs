@@ -17,6 +17,9 @@ func (a *App) Registry() *modules.Registry {
 
 // moduleUserState resolves everything a module gate needs about one user.
 func (a *App) moduleUserState(ctx context.Context, userID int64) (modules.UserState, error) {
+	if a.repo == nil {
+		return modules.UserState{}, nil
+	}
 	var state modules.UserState
 
 	is18Plus, matureOptIn, err := a.repo.UserMaturity(ctx, userID)
@@ -85,16 +88,24 @@ func (a *App) dispatchModuleCallback(ctx context.Context, cb *telegram.CallbackQ
 		return false, nil
 	}
 
-	state, err := a.moduleUserState(ctx, cb.From.ID)
-	if err != nil {
-		return true, err
+	// An empty gate allows unconditionally regardless of user state (see
+	// Gate.Allows), so resolving the state would just be three wasted
+	// database queries.
+	var state modules.UserState
+	if module.Gate != (modules.Gate{}) {
+		var err error
+		state, err = a.moduleUserState(ctx, cb.From.ID)
+		if err != nil {
+			return true, err
+		}
 	}
 	if allowed, reason := module.Gate.Allows(state); !allowed {
 		text := a.i18n.Text(language, reason)
 		return true, a.editCallbackScreen(ctx, cb, chatID, text,
-			telegram.MainMenuKeyboardWithPair(language, state.HasActivePair))
+			a.mainMenuKeyboard(ctx, cb.From.ID, language, state.HasActivePair))
 	}
 	if module.Handler == nil {
+		a.logger.Warn("module callback matched but module has no handler", "module_id", module.ID)
 		return true, nil
 	}
 	return true, module.Handler.HandleCallback(ctx, cb)
