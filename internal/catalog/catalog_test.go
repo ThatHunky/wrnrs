@@ -279,8 +279,11 @@ func TestSelectNextIsDeterministicPerSeedAndBucket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SelectNext returned error: %v", err)
 	}
-	if changed.ID == first.ID && changedSeed.ID == first.ID {
-		t.Fatal("changing both bucket and seed left the pick identical; the seed is not being mixed in")
+	if changed.ID == first.ID {
+		t.Fatal("changing only Bucket left the pick identical; Bucket is not being mixed into the shuffle seed")
+	}
+	if changedSeed.ID == first.ID {
+		t.Fatal("changing only SeedID left the pick identical; SeedID is not being mixed into the shuffle seed")
 	}
 }
 
@@ -288,5 +291,25 @@ func TestSelectNextRejectsEmptyInput(t *testing.T) {
 	_, _, _, err := catalog.SelectNext(catalog.SelectionInput{SeedID: 1, Bucket: "positions"})
 	if err == nil {
 		t.Fatal("SelectNext on empty items succeeded, want an error")
+	}
+}
+
+func TestSelectNextCycleAffectsTheShuffle(t *testing.T) {
+	items := []catalog.Item{{ID: "a"}, {ID: "b"}, {ID: "c"}, {ID: "d"}}
+
+	cycleZero, _, _, err := catalog.SelectNext(catalog.SelectionInput{
+		SeedID: 99, Bucket: "positions", Cycle: 0, Items: items,
+	})
+	if err != nil {
+		t.Fatalf("SelectNext returned error: %v", err)
+	}
+	cycleOne, _, _, err := catalog.SelectNext(catalog.SelectionInput{
+		SeedID: 99, Bucket: "positions", Cycle: 1, Items: items,
+	})
+	if err != nil {
+		t.Fatalf("SelectNext returned error: %v", err)
+	}
+	if cycleZero.ID == cycleOne.ID {
+		t.Fatal("changing only Cycle left the pick identical; Cycle is not being mixed into the shuffle seed")
 	}
 }
