@@ -131,3 +131,14 @@ func TestAllReturnsACopy(t *testing.T) {
 		t.Fatalf("All() leaked its backing array: id is now %q", again[0].ID)
 	}
 }
+
+func TestRegisterRejectsCollidingPrefixRegisteredInEitherOrder(t *testing.T) {
+	r := modules.NewRegistry()
+	if err := r.Register(modules.Module{ID: "favourites", CallbackPrefix: "pos:fav:"}); err != nil {
+		t.Fatalf("first Register with longer prefix succeeded, got error: %v", err)
+	}
+
+	if err := r.Register(modules.Module{ID: "positions", CallbackPrefix: "pos:"}); err == nil {
+		t.Fatal("Register with shorter prefix that collides with existing longer prefix succeeded, want an error — collision must be caught regardless of registration order")
+	}
+}
