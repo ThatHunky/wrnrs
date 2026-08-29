@@ -28,6 +28,7 @@ If `npx` is unavailable, state that clearly and use primary docs or local packag
 - Direct sexual cards require both `requires_mature_opt_in: true` and the `mature` tag.
 - Donation prompts are optional author support only and must not unlock digital goods. Premium/cosmetics must use Telegram Stars or admin grants.
 - Admin tools must not expose private answers unless the user explicitly changes the support policy.
+- Нові модулі суперапу реєструються в `internal/modules`, а не додаються гілками в `internal/app/app.go`. Префікс колбека модуля має завершуватись двокрапкою і не перетинатися з наявними.
 
 ## Verification Checklist
 

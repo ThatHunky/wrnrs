@@ -6,6 +6,8 @@
 - `internal/app`: update orchestration and high-level route handling.
 - `internal/telegram`: Telegram Bot API DTOs, HTTP client, inline/reply keyboards.
 - `internal/content`: deck, style, background, and font JSON loading, validation, maturity filtering, and deterministic no-repeat selection.
+- `internal/catalog`: generic content catalogs for superapp modules — facet filtering and deterministic no-repeat selection seeded by pair or user id.
+- `internal/modules`: module registry and access gate (`18+`, mature opt-in, active pair, premium) with callback-prefix dispatch.
 - `internal/game`: durable pair-game state transitions, invite acceptance, completion types, reveal readiness, no-repeat selection, level progression, and support prompt cadence.
 - `internal/i18n`: localized UI strings and brand text fallback.
 - `internal/storage`: SQLite migration and repository methods for profiles, pairs, sessions, answers, purchases, entitlements, uploads, admin audit, support timestamps, and custom questions.
