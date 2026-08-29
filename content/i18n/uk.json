@@ -95,6 +95,10 @@
     "custom_questions.enter_prompt": "Напиши текст свого питання (до 200 символів):",
     "custom_questions.invalid_length": "Текст питання занадто короткий або довгий. Спробуй ще раз (до 200 символів):",
     "custom_questions.success_added": "🎉 Питання успішно додано!",
-    "custom_questions.success_deleted": "❌ Питання видалено!"
+    "custom_questions.success_deleted": "❌ Питання видалено!",
+    "gate.needs_18plus": "Спочатку підтверди, що тобі є 18+. Це в налаштуваннях.",
+    "gate.needs_mature": "Цей розділ вимагає згоди на контент 18+. Увімкни її в налаштуваннях.",
+    "gate.needs_pair": "Спочатку створи пару — цей розділ для двох.",
+    "gate.needs_premium": "Цей розділ доступний з преміумом."
   }
 }

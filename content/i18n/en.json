@@ -95,6 +95,10 @@
     "custom_questions.enter_prompt": "Send the text of your question (up to 200 characters):",
     "custom_questions.invalid_length": "The question is too short or too long. Please try again (up to 200 characters):",
     "custom_questions.success_added": "🎉 Question added successfully!",
-    "custom_questions.success_deleted": "❌ Question deleted!"
+    "custom_questions.success_deleted": "❌ Question deleted!",
+    "gate.needs_18plus": "Confirm that you are 18+ first. It is in settings.",
+    "gate.needs_mature": "This section needs your consent to 18+ content. Enable it in settings.",
+    "gate.needs_pair": "Create a pair first — this section is for two.",
+    "gate.needs_premium": "This section is available with premium."
   }
 }

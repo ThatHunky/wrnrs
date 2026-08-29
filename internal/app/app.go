@@ -816,7 +816,7 @@ func (a *App) handleCallback(ctx context.Context, cb *telegram.CallbackQuery) er
 	case cb.Data == "menu:main":
 		lang = a.userLanguage(ctx, cb.From.ID, lang)
 		text, hasPair := a.buildMainMenuText(ctx, cb.From.ID, lang)
-		return a.editCallbackScreen(ctx, cb, chatID, text, telegram.MainMenuKeyboardWithPair(lang, hasPair))
+		return a.editCallbackScreen(ctx, cb, chatID, text, a.mainMenuKeyboard(ctx, cb.From.ID, lang, hasPair))
 	case strings.HasPrefix(cb.Data, "pair:accept:"):
 		return a.acceptPairRequest(ctx, cb, chatID, cb.From.ID, strings.TrimPrefix(cb.Data, "pair:accept:"))
 	case strings.HasPrefix(cb.Data, "pair:decline:"):

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"wrnrs/internal/modules"
@@ -259,5 +260,50 @@ func TestDispatchModuleCallbackPropagatesHandlerError(t *testing.T) {
 	}
 	if !handled {
 		t.Fatal("dispatchModuleCallback reported not handled after a handler error; caller would fall through to the legacy switch on an already-claimed prefix")
+	}
+}
+
+func TestMainMenuKeyboardAppendsModuleRowsWithLockForBlockedOnes(t *testing.T) {
+	a, _, _ := newTestApp(t)
+	ctx := context.Background()
+
+	const userID = int64(4201)
+	if err := a.repo.UpsertUser(ctx, storage.User{TelegramID: userID, DisplayName: "Тест", Language: "uk"}); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	err := a.Registry().Register(modules.Module{
+		ID:             "demo",
+		TitleKey:       "module.demo",
+		Icon:           "🎲",
+		CallbackPrefix: "demo:",
+		Gate:           modules.Gate{Needs18Plus: true},
+	})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	base := telegram.MainMenuKeyboardWithPair("uk", false)
+	got := a.mainMenuKeyboard(ctx, userID, "uk", false)
+	if len(got.InlineKeyboard) != len(base.InlineKeyboard)+1 {
+		t.Fatalf("menu has %d rows, want %d (base plus one module row)",
+			len(got.InlineKeyboard), len(base.InlineKeyboard)+1)
+	}
+
+	last := got.InlineKeyboard[len(got.InlineKeyboard)-1][0]
+	if last.CallbackData != "demo:open" {
+		t.Fatalf("module button callback = %q, want demo:open", last.CallbackData)
+	}
+	if !strings.Contains(last.Text, "🔒") {
+		t.Fatalf("blocked module button text = %q, want a lock marker", last.Text)
+	}
+
+	if err := a.repo.UpdateAdultConfirmation(ctx, userID, true); err != nil {
+		t.Fatalf("UpdateAdultConfirmation: %v", err)
+	}
+	unlocked := a.mainMenuKeyboard(ctx, userID, "uk", false)
+	unlockedLast := unlocked.InlineKeyboard[len(unlocked.InlineKeyboard)-1][0]
+	if strings.Contains(unlockedLast.Text, "🔒") {
+		t.Fatalf("unlocked module button text = %q, want no lock marker", unlockedLast.Text)
 	}
 }

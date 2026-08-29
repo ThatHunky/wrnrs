@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 
 	"wrnrs/internal/modules"
 	"wrnrs/internal/storage"
@@ -39,6 +40,37 @@ func (a *App) moduleUserState(ctx context.Context, userID int64) (modules.UserSt
 	state.HasPremium = premium
 
 	return state, nil
+}
+
+// mainMenuKeyboard takes the existing main menu and appends one row per
+// registered module. Blocked modules stay visible with a lock so users can see
+// what exists and what unlocks it.
+func (a *App) mainMenuKeyboard(ctx context.Context, userID int64, language string, hasPair bool) telegram.InlineKeyboardMarkup {
+	keyboard := telegram.MainMenuKeyboardWithPair(language, hasPair)
+	if a.registry == nil {
+		return keyboard
+	}
+	registered := a.registry.All()
+	if len(registered) == 0 {
+		return keyboard
+	}
+
+	state, err := a.moduleUserState(ctx, userID)
+	if err != nil {
+		a.logger.Warn("resolve module state for menu failed", "user_id", userID, "err", err)
+		state = modules.UserState{HasActivePair: hasPair}
+	}
+
+	for _, module := range registered {
+		label := strings.TrimSpace(module.Icon + " " + a.i18n.Text(language, module.TitleKey))
+		if allowed, _ := module.Gate.Allows(state); !allowed {
+			label += " 🔒"
+		}
+		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, []telegram.InlineKeyboardButton{
+			{Text: label, CallbackData: module.CallbackPrefix + "open"},
+		})
+	}
+	return keyboard
 }
 
 // dispatchModuleCallback routes a callback to its module. It reports handled
