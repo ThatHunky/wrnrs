@@ -9,6 +9,7 @@ type SupportPromptInput struct {
 	LastPromptedAt *time.Time
 	UserAPremium   bool
 	UserBPremium   bool
+	Interval       time.Duration
 }
 
 func ShouldShowSupportPrompt(input SupportPromptInput) bool {
@@ -18,5 +19,9 @@ func ShouldShowSupportPrompt(input SupportPromptInput) bool {
 	if input.LastPromptedAt == nil {
 		return true
 	}
-	return !input.LastPromptedAt.Add(SupportPromptInterval).After(input.Now)
+	interval := input.Interval
+	if interval <= 0 {
+		interval = SupportPromptInterval
+	}
+	return !input.LastPromptedAt.Add(interval).After(input.Now)
 }

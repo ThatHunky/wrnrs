@@ -13,3 +13,7 @@ coverage.html
 .worktrees/
 worktrees/
 *.log
+
+# Session transcripts and agent scratch — not source
+.specstory/
+.superpowers/

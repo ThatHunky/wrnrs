@@ -18,10 +18,17 @@ The most important rules have focused tests:
 - `internal/content`: deck validation, mature filtering, no-repeat cycle selection.
 - `internal/game`: invite acceptance, synchronized typed/skip/in-person completion, no-repeat selection, level progression, encrypted reveal behavior, and support prompt cadence.
 - `internal/render`: real PNG card output and real WebP upload derivatives.
-- `internal/storage`: SQLite migration, answer encryption helper, game session repositories, and core repository behavior.
+- `internal/storage`: SQLite migration, answer encryption helper, game session repositories, journal queries, purchase idempotency, support prompt timestamps, custom questions, pair theme shares, and core repository behavior.
 - `internal/i18n`: brand and text fallback.
+- `internal/app`: onboarding/settings routing, pair flow, game callbacks, journal rendering, support interstitials, inline mode, payment handling, admin actions, custom question UI, theme menus, document/photo background uploads, pair cleanup, rate-limit handling, and account deletion.
 
 Add tests before implementing new behavior.
+
+Remaining gaps that need focused tests before implementation:
+
+- Telegram render file-ID cache use in send paths.
+- Pair-invite Redis mirrors, if the design keeps them.
+- Any future inline photo mode that serves public JPEG URLs.
 
 ## Adding Questions
 
@@ -44,4 +51,6 @@ Edit `content/fonts.v1.json` and place TTF files under `assets/fonts/`. Preserve
 
 ## Uploaded Backgrounds
 
-`render.ProcessUploadedBackground` accepts JPEG, PNG, or WebP, strips metadata by decode/re-encode, center-crops to card aspect ratio, resizes, and encodes WebP.
+`render.ProcessUploadedBackground` accepts JPEG, PNG, or WebP bytes, strips metadata by decode/re-encode, center-crops to card aspect ratio, resizes, and encodes WebP. The Telegram app handler wires this through photo messages and JPEG/PNG/WebP document messages in the background-upload FSM.
+
+The app enforces 3 active uploaded backgrounds per user. Selecting an owned uploaded background shares it with the active pair through `pair_theme_shares`; partner-shared backgrounds are selectable while the pair remains active. Deleting a selected uploaded background resets all users referencing that asset to the default dynamic gradient. Pair break clears pair shares and resets selected shared backgrounds for both users.

@@ -144,6 +144,16 @@ func (c *Client) AnswerPreCheckoutQuery(ctx context.Context, id string, ok bool,
 	return c.postJSON(ctx, "answerPreCheckoutQuery", payload, nil)
 }
 
+func (c *Client) AnswerInlineQuery(ctx context.Context, inlineQueryID string, results []InlineQueryResult, cacheTime int, isPersonal bool) error {
+	payload := map[string]any{
+		"inline_query_id": inlineQueryID,
+		"results":         results,
+		"cache_time":      cacheTime,
+		"is_personal":     isPersonal,
+	}
+	return c.postJSON(ctx, "answerInlineQuery", payload, nil)
+}
+
 func (c *Client) SendInvoice(ctx context.Context, chatID int64, title, description, payload string, amount int64, replyMarkup any) error {
 	body := map[string]any{
 		"chat_id":        chatID,

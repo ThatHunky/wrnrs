@@ -29,6 +29,7 @@ type Message struct {
 	Text              string             `json:"text,omitempty"`
 	Caption           string             `json:"caption,omitempty"`
 	Contact           *Contact           `json:"contact,omitempty"`
+	Document          *Document          `json:"document,omitempty"`
 	Photo             []PhotoSize        `json:"photo,omitempty"`
 	SuccessfulPayment *SuccessfulPayment `json:"successful_payment,omitempty"`
 }
@@ -45,6 +46,13 @@ type PhotoSize struct {
 	FileSize int64  `json:"file_size,omitempty"`
 	Width    int    `json:"width"`
 	Height   int    `json:"height"`
+}
+
+type Document struct {
+	FileID   string `json:"file_id"`
+	FileName string `json:"file_name,omitempty"`
+	MimeType string `json:"mime_type,omitempty"`
+	FileSize int64  `json:"file_size,omitempty"`
 }
 
 type File struct {
@@ -64,6 +72,20 @@ type InlineQuery struct {
 	ID    string `json:"id"`
 	From  User   `json:"from"`
 	Query string `json:"query"`
+}
+
+type InlineQueryResult interface{}
+
+type InlineQueryResultArticle struct {
+	Type                string                  `json:"type"`
+	ID                  string                  `json:"id"`
+	Title               string                  `json:"title"`
+	Description         string                  `json:"description,omitempty"`
+	InputMessageContent InputTextMessageContent `json:"input_message_content"`
+}
+
+type InputTextMessageContent struct {
+	MessageText string `json:"message_text"`
 }
 
 type PreCheckoutQuery struct {

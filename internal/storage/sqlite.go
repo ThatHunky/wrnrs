@@ -76,6 +76,10 @@ type GameSession struct {
 	PairID           int64
 	Level            int
 	QuestionID       string
+	QuestionSource   string
+	QuestionTextUK   string
+	QuestionTextEN   string
+	RequiresMature   bool
 	Status           string
 	DeckCycle        int
 	InvitedByUserID  int64
@@ -138,11 +142,37 @@ type ThemeAsset struct {
 	SizeBytes      int64
 }
 
+type PairThemeShare struct {
+	PairID         int64
+	AssetID        string
+	SharedByUserID int64
+	Status         string
+}
+
 type CustomQuestion struct {
 	ID           int64
 	CreatorID    int64
 	QuestionText string
 	CreatedAt    time.Time
+	DeletedAt    sql.NullTime
+}
+
+type JournalAnswer struct {
+	UserID              int64
+	CompletionType      string
+	AnswerTextEncrypted []byte
+}
+
+type JournalEntry struct {
+	SessionID      int64
+	PairID         int64
+	Level          int
+	QuestionID     string
+	QuestionTextUK string
+	QuestionTextEN string
+	RequiresMature bool
+	RevealedAt     time.Time
+	Answers        []JournalAnswer
 }
 
 type Repository struct {
@@ -178,6 +208,11 @@ func OpenSQLite(ctx context.Context, dsn string) (*sql.DB, error) {
 	_, _ = db.ExecContext(ctx, `ALTER TABLE game_sessions ADD COLUMN invite_expires_at TEXT`)
 	_, _ = db.ExecContext(ctx, `ALTER TABLE game_sessions ADD COLUMN started_at TEXT`)
 	_, _ = db.ExecContext(ctx, `ALTER TABLE game_sessions ADD COLUMN completed_at TEXT`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE game_sessions ADD COLUMN question_source TEXT NOT NULL DEFAULT 'stock'`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE game_sessions ADD COLUMN question_text_uk TEXT NOT NULL DEFAULT ''`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE game_sessions ADD COLUMN question_text_en TEXT NOT NULL DEFAULT ''`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE game_sessions ADD COLUMN requires_mature_opt_in BOOLEAN NOT NULL DEFAULT 0`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE custom_questions ADD COLUMN deleted_at TEXT`)
 	if _, err := db.ExecContext(ctx, `
 		CREATE UNIQUE INDEX IF NOT EXISTS game_sessions_one_current_pair_idx
 		ON game_sessions(pair_id)
@@ -503,6 +538,18 @@ func (r *Repository) UpdateUserBackground(ctx context.Context, telegramID int64,
 	return nil
 }
 
+func (r *Repository) ResetSelectedBackgroundAsset(ctx context.Context, assetID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE users
+		SET selected_background_asset_id = NULL, updated_at = CURRENT_TIMESTAMP
+		WHERE selected_background_asset_id = ?
+	`, assetID)
+	if err != nil {
+		return fmt.Errorf("reset selected background asset: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) UpdateUserFont(ctx context.Context, telegramID int64, fontID string) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE users
@@ -617,6 +664,182 @@ func (r *Repository) DeleteThemeAsset(ctx context.Context, assetID string) error
 	return nil
 }
 
+func (r *Repository) CreatePairThemeShare(ctx context.Context, pairID int64, assetID string, sharedByUserID int64) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO pair_theme_shares (pair_id, asset_id, shared_by_user_id, status, created_at, updated_at)
+		VALUES (?, ?, ?, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		ON CONFLICT(pair_id, asset_id) DO UPDATE SET
+			shared_by_user_id = excluded.shared_by_user_id,
+			status = 'active',
+			updated_at = CURRENT_TIMESTAMP
+	`, pairID, assetID, sharedByUserID)
+	if err != nil {
+		return fmt.Errorf("create pair theme share: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) PairThemeShares(ctx context.Context, pairID int64) ([]PairThemeShare, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT pair_id, asset_id, shared_by_user_id, status
+		FROM pair_theme_shares
+		WHERE pair_id = ?
+		  AND status = 'active'
+		ORDER BY created_at DESC
+	`, pairID)
+	if err != nil {
+		return nil, fmt.Errorf("query pair theme shares: %w", err)
+	}
+	defer rows.Close()
+	var shares []PairThemeShare
+	for rows.Next() {
+		var share PairThemeShare
+		if err := rows.Scan(&share.PairID, &share.AssetID, &share.SharedByUserID, &share.Status); err != nil {
+			return nil, err
+		}
+		shares = append(shares, share)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return shares, nil
+}
+
+func (r *Repository) SharedUploadedBackgroundsForUser(ctx context.Context, userID int64) ([]ThemeAsset, error) {
+	pair, err := r.ActivePairForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if pair == nil {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT ta.id, ta.owner_user_id, ta.kind, ta.minio_object_key, ta.status,
+		       ta.width, ta.height, ta.size_bytes
+		FROM pair_theme_shares pts
+		JOIN theme_assets ta ON ta.id = pts.asset_id
+		WHERE pts.pair_id = ?
+		  AND pts.status = 'active'
+		  AND pts.shared_by_user_id != ?
+		  AND ta.status = 'active'
+		ORDER BY pts.created_at DESC
+	`, pair.ID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("query shared uploaded backgrounds: %w", err)
+	}
+	defer rows.Close()
+	var assets []ThemeAsset
+	for rows.Next() {
+		var asset ThemeAsset
+		var owner sql.NullInt64
+		if err := rows.Scan(&asset.ID, &owner, &asset.Kind, &asset.MinioObjectKey, &asset.Status, &asset.Width, &asset.Height, &asset.SizeBytes); err != nil {
+			return nil, err
+		}
+		if owner.Valid {
+			asset.OwnerUserID = owner.Int64
+		}
+		assets = append(assets, asset)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return assets, nil
+}
+
+func (r *Repository) PairHasActiveThemeShare(ctx context.Context, pairID int64, assetID string) (bool, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM pair_theme_shares
+		WHERE pair_id = ?
+		  AND asset_id = ?
+		  AND status = 'active'
+	`, pairID, assetID).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("check pair theme share: %w", err)
+	}
+	return count > 0, nil
+}
+
+func (r *Repository) EndActivePair(ctx context.Context, userID int64, now time.Time) (*Pair, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin end pair: %w", err)
+	}
+	defer tx.Rollback()
+
+	pair, err := activePairForUserTx(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if pair == nil {
+		return nil, nil
+	}
+	nowValue := now.UTC().Format(time.RFC3339Nano)
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE pairs
+		SET status = 'ended', ended_at = ?
+		WHERE id = ? AND status = 'active'
+	`, nowValue, pair.ID); err != nil {
+		return nil, fmt.Errorf("end pair: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE game_sessions
+		SET status = 'cancelled', updated_at = ?
+		WHERE pair_id = ?
+		  AND status IN ('pending_acceptance', 'active', 'revealed')
+	`, nowValue, pair.ID); err != nil {
+		return nil, fmt.Errorf("cancel pair game sessions: %w", err)
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT asset_id
+		FROM pair_theme_shares
+		WHERE pair_id = ?
+		  AND status = 'active'
+	`, pair.ID)
+	if err != nil {
+		return nil, fmt.Errorf("query pair share assets: %w", err)
+	}
+	var assetIDs []string
+	for rows.Next() {
+		var assetID string
+		if err := rows.Scan(&assetID); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		assetIDs = append(assetIDs, assetID)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE pair_theme_shares
+		SET status = 'ended', updated_at = ?
+		WHERE pair_id = ?
+		  AND status = 'active'
+	`, nowValue, pair.ID); err != nil {
+		return nil, fmt.Errorf("end pair theme shares: %w", err)
+	}
+	for _, assetID := range assetIDs {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE users
+			SET selected_background_asset_id = NULL, updated_at = CURRENT_TIMESTAMP
+			WHERE telegram_id IN (?, ?)
+			  AND selected_background_asset_id = ?
+		`, pair.UserAID, pair.UserBID, assetID); err != nil {
+			return nil, fmt.Errorf("reset shared selected background: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit end pair: %w", err)
+	}
+	return pair, nil
+}
+
 func (r *Repository) UpdateUserPhoneHash(ctx context.Context, telegramID int64, phoneHash string) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE users
@@ -627,6 +850,22 @@ func (r *Repository) UpdateUserPhoneHash(ctx context.Context, telegramID int64, 
 		return fmt.Errorf("update user phone hash: %w", err)
 	}
 	return nil
+}
+
+func (r *Repository) UserPhoneHash(ctx context.Context, telegramID int64) (sql.NullString, error) {
+	var phoneHash sql.NullString
+	err := r.db.QueryRowContext(ctx, `
+		SELECT phone_lookup_hash
+		FROM users
+		WHERE telegram_id = ?
+	`, telegramID).Scan(&phoneHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return sql.NullString{}, nil
+	}
+	if err != nil {
+		return sql.NullString{}, fmt.Errorf("load user phone hash: %w", err)
+	}
+	return phoneHash, nil
 }
 
 func (r *Repository) CreatePairRequest(ctx context.Context, request PairRequest) (PairRequest, error) {
@@ -802,14 +1041,20 @@ func (r *Repository) CreateGameSession(ctx context.Context, session GameSession)
 	if status == "" {
 		status = GameSessionPendingAcceptance
 	}
+	source := session.QuestionSource
+	if source == "" {
+		source = "stock"
+	}
 	result, err := r.db.ExecContext(ctx, `
 		INSERT INTO game_sessions (
-			pair_id, level, question_id, status, deck_cycle, invited_by_user_id,
+			pair_id, level, question_id, question_source, question_text_uk,
+			question_text_en, requires_mature_opt_in, status, deck_cycle, invited_by_user_id,
 			accepted_by_user_id, invite_expires_at, started_at, revealed_at, completed_at,
 			updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`, session.PairID, session.Level, session.QuestionID, status, session.DeckCycle, nullableInt64Value(sql.NullInt64{Int64: session.InvitedByUserID, Valid: session.InvitedByUserID != 0}),
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+	`, session.PairID, session.Level, session.QuestionID, source, session.QuestionTextUK,
+		session.QuestionTextEN, session.RequiresMature, status, session.DeckCycle, nullableInt64Value(sql.NullInt64{Int64: session.InvitedByUserID, Valid: session.InvitedByUserID != 0}),
 		nullableInt64Value(session.AcceptedByUserID), nullableTimeValue(session.InviteExpiresAt),
 		nullableTimeValue(session.StartedAt), nullableTimeValue(session.RevealedAt), nullableTimeValue(session.CompletedAt))
 	if err != nil {
@@ -825,6 +1070,7 @@ func (r *Repository) CreateGameSession(ctx context.Context, session GameSession)
 func (r *Repository) GameSession(ctx context.Context, sessionID int64) (GameSession, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, pair_id, level, question_id, status, deck_cycle,
+		       question_source, question_text_uk, question_text_en, requires_mature_opt_in,
 		       invited_by_user_id, accepted_by_user_id, invite_expires_at,
 		       started_at, revealed_at, completed_at
 		FROM game_sessions
@@ -843,6 +1089,7 @@ func (r *Repository) GameSession(ctx context.Context, sessionID int64) (GameSess
 func (r *Repository) CurrentGameSessionForPair(ctx context.Context, pairID int64) (*GameSession, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, pair_id, level, question_id, status, deck_cycle,
+		       question_source, question_text_uk, question_text_en, requires_mature_opt_in,
 		       invited_by_user_id, accepted_by_user_id, invite_expires_at,
 		       started_at, revealed_at, completed_at
 		FROM game_sessions
@@ -1267,7 +1514,9 @@ func (r *Repository) CreateCustomQuestion(ctx context.Context, creatorID int64, 
 
 func (r *Repository) DeleteCustomQuestion(ctx context.Context, id, creatorID int64) error {
 	_, err := r.db.ExecContext(ctx, `
-		DELETE FROM custom_questions WHERE id = ? AND creator_id = ?
+		UPDATE custom_questions
+		SET deleted_at = COALESCE(deleted_at, CURRENT_TIMESTAMP)
+		WHERE id = ? AND creator_id = ?
 	`, id, creatorID)
 	if err != nil {
 		return fmt.Errorf("delete custom question: %w", err)
@@ -1286,17 +1535,19 @@ func (r *Repository) GetPairCustomQuestions(ctx context.Context, userID int64) (
 	var args []any
 	if pair != nil {
 		query = `
-			SELECT id, creator_id, question_text, created_at
+			SELECT id, creator_id, question_text, created_at, deleted_at
 			FROM custom_questions
-			WHERE creator_id = ? OR creator_id = ?
+			WHERE (creator_id = ? OR creator_id = ?)
+			  AND deleted_at IS NULL
 			ORDER BY created_at ASC
 		`
 		args = []any{pair.UserAID, pair.UserBID}
 	} else {
 		query = `
-			SELECT id, creator_id, question_text, created_at
+			SELECT id, creator_id, question_text, created_at, deleted_at
 			FROM custom_questions
 			WHERE creator_id = ?
+			  AND deleted_at IS NULL
 			ORDER BY created_at ASC
 		`
 		args = []any{userID}
@@ -1312,7 +1563,8 @@ func (r *Repository) GetPairCustomQuestions(ctx context.Context, userID int64) (
 	for rows.Next() {
 		var q CustomQuestion
 		var createdAtStr string
-		if err := rows.Scan(&q.ID, &q.CreatorID, &q.QuestionText, &createdAtStr); err != nil {
+		var deletedAt sql.NullString
+		if err := rows.Scan(&q.ID, &q.CreatorID, &q.QuestionText, &createdAtStr, &deletedAt); err != nil {
 			return nil, err
 		}
 		if parsed, err := time.Parse(time.RFC3339Nano, createdAtStr); err == nil {
@@ -1324,9 +1576,88 @@ func (r *Repository) GetPairCustomQuestions(ctx context.Context, userID int64) (
 		} else {
 			q.CreatedAt = time.Now()
 		}
+		q.DeletedAt = parseNullableStoredTime(deletedAt)
 		list = append(list, q)
 	}
 	return list, nil
+}
+
+func (r *Repository) PairJournalEntries(ctx context.Context, userID int64) ([]JournalEntry, error) {
+	pair, err := r.ActivePairForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if pair == nil {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, pair_id, level, question_id, question_text_uk, question_text_en,
+		       requires_mature_opt_in, revealed_at
+		FROM game_sessions
+		WHERE pair_id = ?
+		  AND status IN ('revealed', 'completed')
+		  AND revealed_at IS NOT NULL
+		ORDER BY revealed_at DESC, id DESC
+	`, pair.ID)
+	if err != nil {
+		return nil, fmt.Errorf("query pair journal entries: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []JournalEntry
+	for rows.Next() {
+		var entry JournalEntry
+		var revealedAt string
+		if err := rows.Scan(&entry.SessionID, &entry.PairID, &entry.Level, &entry.QuestionID,
+			&entry.QuestionTextUK, &entry.QuestionTextEN, &entry.RequiresMature, &revealedAt); err != nil {
+			return nil, err
+		}
+		parsed, err := parseStoredTime(revealedAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse journal revealed_at: %w", err)
+		}
+		entry.RevealedAt = parsed
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for idx := range entries {
+		answers, err := r.journalAnswers(ctx, entries[idx].SessionID)
+		if err != nil {
+			return nil, err
+		}
+		entries[idx].Answers = answers
+	}
+	return entries, nil
+}
+
+func (r *Repository) journalAnswers(ctx context.Context, sessionID int64) ([]JournalAnswer, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT user_id, completion_type, answer_text_encrypted
+		FROM game_answers
+		WHERE session_id = ?
+		ORDER BY user_id
+	`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("query journal answers: %w", err)
+	}
+	defer rows.Close()
+	var answers []JournalAnswer
+	for rows.Next() {
+		var answer JournalAnswer
+		if err := rows.Scan(&answer.UserID, &answer.CompletionType, &answer.AnswerTextEncrypted); err != nil {
+			return nil, err
+		}
+		answers = append(answers, answer)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return answers, nil
 }
 
 func normalizeUsername(username string) string {
@@ -1347,9 +1678,13 @@ func scanGameSession(row scanner) (GameSession, error) {
 	var revealedAt sql.NullString
 	var completedAt sql.NullString
 	if err := row.Scan(&session.ID, &session.PairID, &session.Level, &session.QuestionID, &session.Status,
-		&session.DeckCycle, &invitedBy, &session.AcceptedByUserID, &inviteExpiresAt,
+		&session.DeckCycle, &session.QuestionSource, &session.QuestionTextUK, &session.QuestionTextEN,
+		&session.RequiresMature, &invitedBy, &session.AcceptedByUserID, &inviteExpiresAt,
 		&startedAt, &revealedAt, &completedAt); err != nil {
 		return GameSession{}, err
+	}
+	if session.QuestionSource == "" {
+		session.QuestionSource = "stock"
 	}
 	if invitedBy.Valid {
 		session.InvitedByUserID = invitedBy.Int64
@@ -1547,6 +1882,10 @@ CREATE TABLE IF NOT EXISTS game_sessions (
 	pair_id INTEGER NOT NULL REFERENCES pairs(id) ON DELETE CASCADE,
 	level INTEGER NOT NULL,
 	question_id TEXT NOT NULL,
+	question_source TEXT NOT NULL DEFAULT 'stock',
+	question_text_uk TEXT NOT NULL DEFAULT '',
+	question_text_en TEXT NOT NULL DEFAULT '',
+	requires_mature_opt_in BOOLEAN NOT NULL DEFAULT 0,
 	status TEXT NOT NULL DEFAULT 'active',
 	deck_cycle INTEGER NOT NULL DEFAULT 0,
 	invited_by_user_id INTEGER,
@@ -1655,7 +1994,8 @@ CREATE TABLE IF NOT EXISTS custom_questions (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	creator_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
 	question_text TEXT NOT NULL,
-	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	deleted_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS custom_questions_creator_id_idx ON custom_questions(creator_id);

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"wrnrs/internal/admin"
 	"wrnrs/internal/config"
 	"wrnrs/internal/content"
 	"wrnrs/internal/i18n"
@@ -30,6 +31,7 @@ type fakeBot struct {
 	replyMarkupEdits []editedMessage
 	mediaEdits       []editedMedia
 	invoices         []sentInvoice
+	inlineAnswers    []answeredInlineQuery
 	deletedMessages  []deletedMessage
 	sentPhotos       []sentPhoto
 	photos           int
@@ -41,6 +43,13 @@ type fakeBot struct {
 type deletedMessage struct {
 	chatID    int64
 	messageID int64
+}
+
+type answeredInlineQuery struct {
+	id         string
+	results    []telegram.InlineQueryResult
+	cacheTime  int
+	isPersonal bool
 }
 
 type sentInvoice struct {
@@ -127,6 +136,15 @@ func (b *fakeBot) EditMessageMedia(_ context.Context, chatID, messageID int64, p
 
 func (b *fakeBot) AnswerCallbackQuery(context.Context, string, string) error          { return nil }
 func (b *fakeBot) AnswerPreCheckoutQuery(context.Context, string, bool, string) error { return nil }
+func (b *fakeBot) AnswerInlineQuery(_ context.Context, inlineQueryID string, results []telegram.InlineQueryResult, cacheTime int, isPersonal bool) error {
+	b.inlineAnswers = append(b.inlineAnswers, answeredInlineQuery{
+		id:         inlineQueryID,
+		results:    results,
+		cacheTime:  cacheTime,
+		isPersonal: isPersonal,
+	})
+	return nil
+}
 func (b *fakeBot) SendInvoice(_ context.Context, chatID int64, title, description, payload string, amount int64, replyMarkup any) error {
 	b.invoices = append(b.invoices, sentInvoice{
 		chatID:      chatID,
@@ -163,12 +181,14 @@ func (b *fakeBot) DownloadFile(_ context.Context, filePath string) ([]byte, erro
 }
 
 type fakeState struct {
-	values      map[int64]string
-	completions map[int64]GameCompletion
+	values         map[int64]string
+	completions    map[int64]GameCompletion
+	blockedActions map[string]bool
+	pairLockCalls  []int64
 }
 
 func newFakeState() *fakeState {
-	return &fakeState{values: map[int64]string{}, completions: map[int64]GameCompletion{}}
+	return &fakeState{values: map[int64]string{}, completions: map[int64]GameCompletion{}, blockedActions: map[string]bool{}}
 }
 
 func (s *fakeState) SetFSM(_ context.Context, userID int64, value string, _ time.Duration) error {
@@ -198,6 +218,18 @@ func (s *fakeState) PendingGameCompletion(_ context.Context, userID int64) (Game
 func (s *fakeState) ClearPendingGameCompletion(_ context.Context, userID int64) error {
 	delete(s.completions, userID)
 	return nil
+}
+
+func (s *fakeState) AllowUserAction(_ context.Context, _ int64, action string, _ int, _ time.Duration) (bool, error) {
+	if s.blockedActions[action] {
+		return false, nil
+	}
+	return true, nil
+}
+
+func (s *fakeState) WithPairLock(_ context.Context, pairID int64, _ time.Duration, fn func() error) error {
+	s.pairLockCalls = append(s.pairLockCalls, pairID)
+	return fn()
 }
 
 func TestOnboardingNameAdvancesToGenderInsteadOfMainMenu(t *testing.T) {
@@ -327,6 +359,7 @@ func TestSavedLanguageIsUsedForFallbackMessages(t *testing.T) {
 		{CallbackQuery: testCallback("onboarding:gender:male")},
 		{CallbackQuery: testCallback("onboarding:adult:no")},
 		{CallbackQuery: testCallback("theme:color:#8da68f")},
+		{CallbackQuery: testCallback("onboarding:bg:skip")},
 	} {
 		if err := app.HandleUpdate(ctx, update); err != nil {
 			t.Fatalf("onboarding update failed: %v", err)
@@ -343,6 +376,83 @@ func TestSavedLanguageIsUsedForFallbackMessages(t *testing.T) {
 	}
 	if !strings.Contains(got, "між нами.") || !strings.Contains(got, "Сєва") {
 		t.Fatalf("fallback = %q, want dynamic Ukrainian main menu", got)
+	}
+}
+
+func TestOnboardingOwnContactStoresPhoneHashOnly(t *testing.T) {
+	app, bot, state := newTestApp(t)
+	ctx := context.Background()
+
+	for _, update := range []telegram.Update{
+		{Message: testMessage("/start")},
+		{CallbackQuery: testCallback("onboarding:language:en")},
+		{Message: testMessage("Seva")},
+		{CallbackQuery: testCallback("onboarding:gender:male")},
+	} {
+		if err := app.HandleUpdate(ctx, update); err != nil {
+			t.Fatalf("onboarding update failed: %v", err)
+		}
+	}
+	if got := state.values[1001]; got != string(onboarding.StepOwnContact) {
+		t.Fatalf("fsm step = %q, want %q", got, onboarding.StepOwnContact)
+	}
+	before := len(bot.messages)
+	contact := testContactMessage(1001, "+380977797598", "Seva")
+	if err := app.HandleUpdate(ctx, telegram.Update{Message: contact}); err != nil {
+		t.Fatalf("contact update failed: %v", err)
+	}
+	hash, err := app.repo.UserPhoneHash(ctx, 1001)
+	if err != nil {
+		t.Fatalf("UserPhoneHash returned error: %v", err)
+	}
+	if !hash.Valid || hash.String == "" {
+		t.Fatal("phone hash was not stored")
+	}
+	if strings.Contains(hash.String, "380977797598") || strings.Contains(hash.String, "+") {
+		t.Fatalf("stored phone hash appears to contain raw phone: %q", hash.String)
+	}
+	if got := state.values[1001]; got != string(onboarding.StepAdult) {
+		t.Fatalf("fsm step after contact = %q, want %q", got, onboarding.StepAdult)
+	}
+	if !strings.Contains(bot.messages[before].text, "18") {
+		t.Fatalf("next prompt = %q, want adult confirmation", bot.messages[before].text)
+	}
+}
+
+func TestOnboardingBackgroundSkipCompletesAndOffersPairing(t *testing.T) {
+	app, bot, state := newTestApp(t)
+	ctx := context.Background()
+
+	for _, update := range []telegram.Update{
+		{Message: testMessage("/start")},
+		{CallbackQuery: testCallback("onboarding:language:en")},
+		{Message: testMessage("Seva")},
+		{CallbackQuery: testCallback("onboarding:gender:male")},
+		{CallbackQuery: testCallback("onboarding:contact:skip")},
+		{CallbackQuery: testCallback("onboarding:adult:no")},
+		{CallbackQuery: testCallback("theme:color:#8da68f")},
+	} {
+		if err := app.HandleUpdate(ctx, update); err != nil {
+			t.Fatalf("onboarding update failed: %v", err)
+		}
+	}
+	if got := state.values[1001]; got != string(onboarding.StepBackground) {
+		t.Fatalf("fsm step = %q, want %q", got, onboarding.StepBackground)
+	}
+	if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testCallback("onboarding:bg:skip")}); err != nil {
+		t.Fatalf("background skip failed: %v", err)
+	}
+	if got := state.values[1001]; got != "" {
+		t.Fatalf("fsm after background skip = %q, want cleared", got)
+	}
+	if complete, err := app.repo.UserOnboardingComplete(ctx, 1001); err != nil {
+		t.Fatalf("UserOnboardingComplete returned error: %v", err)
+	} else if !complete {
+		t.Fatal("onboarding was not marked complete")
+	}
+	last := bot.edits[len(bot.edits)-1]
+	if !strings.Contains(last.text, "Pair") || strings.Contains(last.text, "Start / Resume") {
+		t.Fatalf("main menu after onboarding = %q", last.text)
 	}
 }
 
@@ -1231,6 +1341,7 @@ func completeUkrainianOnboarding(t *testing.T, app *App) {
 		{CallbackQuery: testCallback("onboarding:gender:male")},
 		{CallbackQuery: testCallback("onboarding:adult:no")},
 		{CallbackQuery: testCallback("theme:color:#8da68f")},
+		{CallbackQuery: testCallback("onboarding:bg:skip")},
 	} {
 		if err := app.HandleUpdate(ctx, update); err != nil {
 			t.Fatalf("onboarding update failed: %v", err)
@@ -1604,6 +1715,281 @@ func TestGameRevealWaitsForBothPartnerCompletions(t *testing.T) {
 	}
 }
 
+func TestJournalShowsRevealedAnswersForActivePair(t *testing.T) {
+	ctx := context.Background()
+	bot := &fakeBot{}
+	app := newTestAppWithOptions(t, bot, nil)
+	pairUsersForGame(t, app)
+	sessionID := startAndAcceptGame(t, app, bot)
+
+	if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testPhotoCallbackFrom(1001, "tester", "en", "game:answer:"+sessionID)}); err != nil {
+		t.Fatalf("answer callback failed: %v", err)
+	}
+	if err := app.HandleUpdate(ctx, telegram.Update{Message: testMessage("I liked the morning walk.")}); err != nil {
+		t.Fatalf("typed answer failed: %v", err)
+	}
+	if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testPhotoCallbackFrom(2002, "partner", "en", "game:skip:"+sessionID)}); err != nil {
+		t.Fatalf("partner skip callback failed: %v", err)
+	}
+
+	if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testCallback("journal:open")}); err != nil {
+		t.Fatalf("journal callback failed: %v", err)
+	}
+	last := bot.edits[len(bot.edits)-1]
+	if !strings.Contains(last.text, "Question") || !strings.Contains(last.text, "I liked the morning walk.") || !strings.Contains(last.text, "skipped") {
+		t.Fatalf("journal text = %q", last.text)
+	}
+}
+
+func TestRevealSendsSupportPromptToBothPartnersWhenDue(t *testing.T) {
+	ctx := context.Background()
+	bot := &fakeBot{}
+	app := newTestAppWithOptions(t, bot, nil)
+	app.cfg.Donation.MonobankURL = "https://send.monobank.ua/jar/test"
+	app.cfg.Donation.CardNumber = "4441111122223333"
+	pair := pairUsersForGame(t, app)
+	sessionID := startAndAcceptGame(t, app, bot)
+
+	if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testPhotoCallbackFrom(1001, "tester", "en", "game:skip:"+sessionID)}); err != nil {
+		t.Fatalf("first skip callback failed: %v", err)
+	}
+	before := len(bot.messages)
+	if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testPhotoCallbackFrom(2002, "partner", "en", "game:skip:"+sessionID)}); err != nil {
+		t.Fatalf("partner skip callback failed: %v", err)
+	}
+
+	if got := len(bot.messages) - before; got != 4 {
+		t.Fatalf("new messages after reveal = %d, want 4", got)
+	}
+	newMessages := bot.messages[before:]
+	if !strings.Contains(newMessages[0].text, "Support the author here") || !strings.Contains(newMessages[1].text, "Support the author here") {
+		t.Fatalf("support prompts not sent first: %#v", newMessages[:2])
+	}
+	if !strings.Contains(newMessages[2].text, "Card complete.") || !strings.Contains(newMessages[3].text, "Card complete.") {
+		t.Fatalf("reveal messages not sent after support prompts: %#v", newMessages[2:])
+	}
+	if last, err := app.repo.LastSupportPromptAt(ctx, pair.ID); err != nil {
+		t.Fatalf("LastSupportPromptAt returned error: %v", err)
+	} else if last == nil {
+		t.Fatal("support prompt timestamp was not stored")
+	}
+}
+
+func TestRevealSuppressesSupportPromptWhenEitherPartnerPremium(t *testing.T) {
+	ctx := context.Background()
+	bot := &fakeBot{}
+	app := newTestAppWithOptions(t, bot, nil)
+	app.cfg.Donation.MonobankURL = "https://send.monobank.ua/jar/test"
+	app.cfg.Donation.CardNumber = "4441111122223333"
+	pair := pairUsersForGame(t, app)
+	if err := app.repo.GrantEntitlement(ctx, storage.Entitlement{
+		UserID:   2002,
+		Type:     storage.EntitlementPremiumAccess,
+		UnlockID: storage.EntitlementPremiumAccess,
+	}); err != nil {
+		t.Fatalf("GrantEntitlement returned error: %v", err)
+	}
+	sessionID := startAndAcceptGame(t, app, bot)
+
+	if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testPhotoCallbackFrom(1001, "tester", "en", "game:skip:"+sessionID)}); err != nil {
+		t.Fatalf("first skip callback failed: %v", err)
+	}
+	before := len(bot.messages)
+	if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testPhotoCallbackFrom(2002, "partner", "en", "game:skip:"+sessionID)}); err != nil {
+		t.Fatalf("partner skip callback failed: %v", err)
+	}
+
+	if got := len(bot.messages) - before; got != 2 {
+		t.Fatalf("new messages after premium reveal = %d, want 2", got)
+	}
+	for _, msg := range bot.messages[before:] {
+		if strings.Contains(msg.text, "Support the author here") {
+			t.Fatalf("premium reveal included support prompt: %#v", bot.messages[before:])
+		}
+	}
+	if last, err := app.repo.LastSupportPromptAt(ctx, pair.ID); err != nil {
+		t.Fatalf("LastSupportPromptAt returned error: %v", err)
+	} else if last != nil {
+		t.Fatalf("premium reveal stored support prompt timestamp: %v", last)
+	}
+}
+
+func TestRevealSuppressesSupportPromptWhenRecentlyPrompted(t *testing.T) {
+	ctx := context.Background()
+	bot := &fakeBot{}
+	app := newTestAppWithOptions(t, bot, nil)
+	app.cfg.Donation.MonobankURL = "https://send.monobank.ua/jar/test"
+	app.cfg.Donation.CardNumber = "4441111122223333"
+	pair := pairUsersForGame(t, app)
+	if err := app.repo.MarkSupportPrompted(ctx, pair.ID, time.Now().UTC(), 0); err != nil {
+		t.Fatalf("MarkSupportPrompted returned error: %v", err)
+	}
+	sessionID := startAndAcceptGame(t, app, bot)
+
+	if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testPhotoCallbackFrom(1001, "tester", "en", "game:skip:"+sessionID)}); err != nil {
+		t.Fatalf("first skip callback failed: %v", err)
+	}
+	before := len(bot.messages)
+	if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testPhotoCallbackFrom(2002, "partner", "en", "game:skip:"+sessionID)}); err != nil {
+		t.Fatalf("partner skip callback failed: %v", err)
+	}
+
+	if got := len(bot.messages) - before; got != 2 {
+		t.Fatalf("new messages after recent reveal = %d, want 2", got)
+	}
+	for _, msg := range bot.messages[before:] {
+		if strings.Contains(msg.text, "Support the author here") {
+			t.Fatalf("recent reveal included support prompt: %#v", bot.messages[before:])
+		}
+	}
+}
+
+func TestPairBreakEndsPairClearsSharedBackgroundAndCancelsGame(t *testing.T) {
+	ctx := context.Background()
+	bot := &fakeBot{}
+	app := newTestAppWithOptions(t, bot, nil)
+	state := app.state.(*fakeState)
+	pair := pairUsersForGame(t, app)
+
+	_ = state.SetFSM(ctx, 1001, string(onboarding.StepBackground), 24*time.Hour)
+	if err := app.HandleUpdate(ctx, telegram.Update{Message: testPhotoMessage(1001, "pair_bg")}); err != nil {
+		t.Fatalf("background upload failed: %v", err)
+	}
+	profileA, err := app.repo.UserProfile(ctx, 1001)
+	if err != nil {
+		t.Fatalf("UserProfile A: %v", err)
+	}
+	assetID := profileA.SelectedBackgroundAssetID
+	if assetID == "" {
+		t.Fatal("uploaded background was not selected")
+	}
+	if shares, err := app.repo.PairThemeShares(ctx, pair.ID); err != nil {
+		t.Fatalf("PairThemeShares returned error: %v", err)
+	} else if len(shares) != 1 || shares[0].AssetID != assetID {
+		t.Fatalf("pair shares = %#v, want uploaded asset %s", shares, assetID)
+	}
+	if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testCallbackFrom(2002, "partner", "en", "theme:bg:select:"+assetID)}); err != nil {
+		t.Fatalf("partner select shared background failed: %v", err)
+	}
+	profileB, err := app.repo.UserProfile(ctx, 2002)
+	if err != nil {
+		t.Fatalf("UserProfile B: %v", err)
+	}
+	if profileB.SelectedBackgroundAssetID != assetID {
+		t.Fatalf("partner selected background = %q, want %q", profileB.SelectedBackgroundAssetID, assetID)
+	}
+
+	sessionID := startAndAcceptGame(t, app, bot)
+	beforePartnerMessages := len(bot.messages)
+	if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testCallback("pair:break_confirm")}); err != nil {
+		t.Fatalf("pair break confirm failed: %v", err)
+	}
+
+	if active, err := app.repo.ActivePairForUser(ctx, 1001); err != nil {
+		t.Fatalf("ActivePairForUser A returned error: %v", err)
+	} else if active != nil {
+		t.Fatalf("user A still has active pair: %#v", active)
+	}
+	if active, err := app.repo.ActivePairForUser(ctx, 2002); err != nil {
+		t.Fatalf("ActivePairForUser B returned error: %v", err)
+	} else if active != nil {
+		t.Fatalf("user B still has active pair: %#v", active)
+	}
+	if shares, err := app.repo.PairThemeShares(ctx, pair.ID); err != nil {
+		t.Fatalf("PairThemeShares after break returned error: %v", err)
+	} else if len(shares) != 0 {
+		t.Fatalf("pair shares after break = %#v, want none", shares)
+	}
+	sessionIDInt, err := parseInt64(sessionID)
+	if err != nil {
+		t.Fatalf("parse session id: %v", err)
+	}
+	session, err := app.repo.GameSession(ctx, sessionIDInt)
+	if err != nil {
+		t.Fatalf("GameSession returned error: %v", err)
+	}
+	if session.Status != storage.GameSessionCancelled {
+		t.Fatalf("session status = %q, want cancelled", session.Status)
+	}
+	profileA, _ = app.repo.UserProfile(ctx, 1001)
+	profileB, _ = app.repo.UserProfile(ctx, 2002)
+	if profileA.SelectedBackgroundAssetID != "" || profileB.SelectedBackgroundAssetID != "" {
+		t.Fatalf("selected backgrounds after break = %q/%q, want both empty", profileA.SelectedBackgroundAssetID, profileB.SelectedBackgroundAssetID)
+	}
+	if len(bot.messages) == beforePartnerMessages || !strings.Contains(lastMessageTo(t, bot, 2002).text, "Pair ended.") {
+		t.Fatalf("partner was not notified, messages = %#v", bot.messages[beforePartnerMessages:])
+	}
+}
+
+func TestAccountDeletionNotifiesRemainingPartnerAndEndsPair(t *testing.T) {
+	ctx := context.Background()
+	bot := &fakeBot{}
+	app := newTestAppWithOptions(t, bot, nil)
+	pairUsersForGame(t, app)
+
+	before := len(bot.messages)
+	if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testCallback("settings:delete_confirm")}); err != nil {
+		t.Fatalf("delete account confirm failed: %v", err)
+	}
+	if active, err := app.repo.ActivePairForUser(ctx, 2002); err != nil {
+		t.Fatalf("ActivePairForUser returned error: %v", err)
+	} else if active != nil {
+		t.Fatalf("remaining partner still has active pair: %#v", active)
+	}
+	if len(bot.messages) == before || !strings.Contains(lastMessageTo(t, bot, 2002).text, "Pair ended.") {
+		t.Fatalf("remaining partner was not notified, messages = %#v", bot.messages[before:])
+	}
+}
+
+func TestInlineModeOffDoesNotAnswerQueries(t *testing.T) {
+	ctx := context.Background()
+	bot := &fakeBot{}
+	app := newTestAppWithOptions(t, bot, nil)
+
+	if err := app.HandleUpdate(ctx, telegram.Update{InlineQuery: &telegram.InlineQuery{
+		ID:    "inline-off",
+		From:  telegram.User{ID: 1001, FirstName: "Test", Username: "tester", LanguageCode: "en"},
+		Query: "card",
+	}}); err != nil {
+		t.Fatalf("inline update failed: %v", err)
+	}
+	if len(bot.inlineAnswers) != 0 {
+		t.Fatalf("inline answers = %#v, want none", bot.inlineAnswers)
+	}
+}
+
+func TestInlineModeOnReturnsPersonalTextArticle(t *testing.T) {
+	ctx := context.Background()
+	bot := &fakeBot{}
+	app := newTestAppWithOptions(t, bot, nil)
+	app.cfg.FeatureInlineMode = true
+
+	if err := app.HandleUpdate(ctx, telegram.Update{InlineQuery: &telegram.InlineQuery{
+		ID:    "inline-on",
+		From:  telegram.User{ID: 1001, FirstName: "Test", Username: "tester", LanguageCode: "en"},
+		Query: "card",
+	}}); err != nil {
+		t.Fatalf("inline update failed: %v", err)
+	}
+	if len(bot.inlineAnswers) != 1 {
+		t.Fatalf("inline answers = %d, want 1", len(bot.inlineAnswers))
+	}
+	answer := bot.inlineAnswers[0]
+	if answer.id != "inline-on" || !answer.isPersonal || answer.cacheTime != 0 {
+		t.Fatalf("inline answer metadata = %#v", answer)
+	}
+	if len(answer.results) != 1 {
+		t.Fatalf("inline result count = %d, want 1", len(answer.results))
+	}
+	article, ok := answer.results[0].(telegram.InlineQueryResultArticle)
+	if !ok {
+		t.Fatalf("inline result = %T, want article", answer.results[0])
+	}
+	if article.Type != "article" || article.InputMessageContent.MessageText != "Question" {
+		t.Fatalf("inline article = %#v", article)
+	}
+}
+
 func TestOldQuestionScopedGameCallbackIsStale(t *testing.T) {
 	ctx := context.Background()
 	bot := &fakeBot{}
@@ -1616,6 +2002,92 @@ func TestOldQuestionScopedGameCallbackIsStale(t *testing.T) {
 	if _, ok, _ := app.state.(*fakeState).PendingGameCompletion(ctx, 1001); ok {
 		t.Fatal("old question-scoped callback stored a demo pending completion")
 	}
+}
+
+func TestGameCallbackUsesPairLock(t *testing.T) {
+	ctx := context.Background()
+	bot := &fakeBot{}
+	app := newTestAppWithOptions(t, bot, nil)
+	state := app.state.(*fakeState)
+	pair := pairUsersForGame(t, app)
+	sessionID := startAndAcceptGame(t, app, bot)
+	state.pairLockCalls = nil
+
+	if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testPhotoCallback("game:skip:" + sessionID)}); err != nil {
+		t.Fatalf("game skip callback failed: %v", err)
+	}
+	if len(state.pairLockCalls) != 1 || state.pairLockCalls[0] != pair.ID {
+		t.Fatalf("pair lock calls = %#v, want pair %d", state.pairLockCalls, pair.ID)
+	}
+}
+
+func TestRateLimitsRejectUploadPairingInlineAndGameCallbacks(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("upload", func(t *testing.T) {
+		app, bot, state := newTestApp(t)
+		completeUkrainianOnboarding(t, app)
+		state.blockedActions["upload"] = true
+		_ = state.SetFSM(ctx, 1001, string(onboarding.StepBackground), 24*time.Hour)
+
+		if err := app.HandleUpdate(ctx, telegram.Update{Message: testPhotoMessage(1001, "blocked_upload")}); err != nil {
+			t.Fatalf("upload update failed: %v", err)
+		}
+		if got := bot.messages[len(bot.messages)-1].text; !strings.Contains(got, "Забагато") {
+			t.Fatalf("upload rate response = %q", got)
+		}
+	})
+
+	t.Run("pairing", func(t *testing.T) {
+		app, bot, state := newTestApp(t)
+		completeUkrainianOnboarding(t, app)
+		state.blockedActions["pairing"] = true
+		if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testCallback("pair:menu")}); err != nil {
+			t.Fatalf("pair menu failed: %v", err)
+		}
+		if err := app.HandleUpdate(ctx, telegram.Update{Message: testMessage("2002")}); err != nil {
+			t.Fatalf("pairing message failed: %v", err)
+		}
+		if got := bot.messages[len(bot.messages)-1].text; !strings.Contains(got, "Забагато") {
+			t.Fatalf("pairing rate response = %q", got)
+		}
+	})
+
+	t.Run("inline", func(t *testing.T) {
+		bot := &fakeBot{}
+		app := newTestAppWithOptions(t, bot, nil)
+		app.cfg.FeatureInlineMode = true
+		app.state.(*fakeState).blockedActions["inline"] = true
+		if err := app.HandleUpdate(ctx, telegram.Update{InlineQuery: &telegram.InlineQuery{
+			ID:    "inline-limited",
+			From:  telegram.User{ID: 1001, FirstName: "Test", Username: "tester", LanguageCode: "en"},
+			Query: "card",
+		}}); err != nil {
+			t.Fatalf("inline update failed: %v", err)
+		}
+		if len(bot.inlineAnswers) != 1 || len(bot.inlineAnswers[0].results) != 0 {
+			t.Fatalf("inline limited answers = %#v", bot.inlineAnswers)
+		}
+	})
+
+	t.Run("game_callback", func(t *testing.T) {
+		bot := &fakeBot{}
+		app := newTestAppWithOptions(t, bot, nil)
+		state := app.state.(*fakeState)
+		pairUsersForGame(t, app)
+		sessionID := startAndAcceptGame(t, app, bot)
+		state.blockedActions["game_callback"] = true
+
+		if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testPhotoCallback("game:skip:" + sessionID)}); err != nil {
+			t.Fatalf("game callback failed: %v", err)
+		}
+		if len(bot.captionEdits) == 0 {
+			t.Fatal("rate-limited game callback did not edit caption")
+		}
+		if got := bot.captionEdits[len(bot.captionEdits)-1].text; !strings.Contains(got, "Too many attempts") {
+			t.Fatalf("game callback rate response = %q", got)
+		}
+	})
 }
 
 func TestAdminTestCardsFromSettings(t *testing.T) {
@@ -1674,6 +2146,37 @@ func TestAdminTestPrevNavigatesToPrevCard(t *testing.T) {
 
 	if len(bot.mediaEdits) != 1 {
 		t.Fatalf("expected 1 EditMessageMedia, got %d", len(bot.mediaEdits))
+	}
+}
+
+func TestAdminMenuEnumeratesCosmeticCatalogActions(t *testing.T) {
+	ctx := context.Background()
+	app, bot, _ := newTestApp(t)
+	app.admin = admin.NewService([]int64{1001})
+
+	if err := app.HandleUpdate(ctx, telegram.Update{Message: testMessage("/admin")}); err != nil {
+		t.Fatalf("admin command failed: %v", err)
+	}
+	if len(bot.messages) == 0 {
+		t.Fatal("admin command sent no message")
+	}
+	markup, ok := bot.messages[len(bot.messages)-1].markup.(telegram.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("admin markup = %T, want inline keyboard", bot.messages[len(bot.messages)-1].markup)
+	}
+	for _, callback := range []string{
+		"admin:grant:premium_access:premium_access",
+		"admin:revoke:premium_access:premium_access",
+		"admin:grant:style:premium_velvet",
+		"admin:revoke:style:premium_velvet",
+		"admin:grant:font:google_sans_regular",
+		"admin:revoke:font:google_sans_regular",
+		"admin:grant:background:bg_candle",
+		"admin:revoke:background:bg_candle",
+	} {
+		if !inlineKeyboardHasCallback(markup, callback) {
+			t.Fatalf("admin menu missing callback %q in %#v", callback, markup)
+		}
 	}
 }
 
@@ -2169,6 +2672,17 @@ func testPhotoMessage(userID int64, fileID string) *telegram.Message {
 	return msg
 }
 
+func testDocumentMessage(userID int64, fileID, fileName, mimeType string, fileSize int64) *telegram.Message {
+	msg := testMessageFrom(userID, "tester", "en", "")
+	msg.Document = &telegram.Document{
+		FileID:   fileID,
+		FileName: fileName,
+		MimeType: mimeType,
+		FileSize: fileSize,
+	}
+	return msg
+}
+
 func TestBackgroundUploadAndLimit(t *testing.T) {
 	app, bot, state := newTestApp(t)
 	ctx := context.Background()
@@ -2249,6 +2763,49 @@ func TestBackgroundUploadAndLimit(t *testing.T) {
 	}
 	if profile.SelectedBackgroundAssetID != "" {
 		t.Fatalf("expected selected background to be reset to empty, got %q", profile.SelectedBackgroundAssetID)
+	}
+}
+
+func TestBackgroundDocumentUploadAcceptsImagesAndRejectsUnsupported(t *testing.T) {
+	app, bot, state := newTestApp(t)
+	ctx := context.Background()
+	completeUkrainianOnboarding(t, app)
+
+	_ = state.SetFSM(ctx, 1001, string(onboarding.StepBackground), 24*time.Hour)
+	beforeMsgs := len(bot.messages)
+	docMsg := testDocumentMessage(1001, "doc_png", "background.png", "image/png", 1000)
+	if err := app.HandleUpdate(ctx, telegram.Update{Message: docMsg}); err != nil {
+		t.Fatalf("handle document image failed: %v", err)
+	}
+	if len(bot.messages) == beforeMsgs {
+		t.Fatal("expected document upload response")
+	}
+	profile, err := app.repo.UserProfile(ctx, 1001)
+	if err != nil {
+		t.Fatalf("UserProfile: %v", err)
+	}
+	if !strings.HasPrefix(profile.SelectedBackgroundAssetID, "upload_1001_") {
+		t.Fatalf("selected background = %q, want uploaded asset", profile.SelectedBackgroundAssetID)
+	}
+
+	_ = state.SetFSM(ctx, 1001, string(onboarding.StepBackground), 24*time.Hour)
+	before := len(bot.messages)
+	badDoc := testDocumentMessage(1001, "doc_txt", "notes.txt", "text/plain", 1000)
+	if err := app.HandleUpdate(ctx, telegram.Update{Message: badDoc}); err != nil {
+		t.Fatalf("handle unsupported document failed: %v", err)
+	}
+	if got := bot.messages[before].text; !strings.Contains(got, "failed") && !strings.Contains(got, "Помилка") {
+		t.Fatalf("unsupported document response = %q", got)
+	}
+
+	_ = state.SetFSM(ctx, 1001, string(onboarding.StepBackground), 24*time.Hour)
+	before = len(bot.messages)
+	oversizeDoc := testDocumentMessage(1001, "doc_big", "huge.webp", "image/webp", render.DefaultMaxUploadBytes+1)
+	if err := app.HandleUpdate(ctx, telegram.Update{Message: oversizeDoc}); err != nil {
+		t.Fatalf("handle oversized document failed: %v", err)
+	}
+	if got := bot.messages[before].text; !strings.Contains(got, "failed") && !strings.Contains(got, "Помилка") {
+		t.Fatalf("oversized document response = %q", got)
 	}
 }
 

@@ -2,6 +2,8 @@ package state
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -71,6 +73,50 @@ func (s *RedisStore) ClearPendingGameCompletion(ctx context.Context, userID int6
 	return s.client.Del(ctx, pendingGameCompletionKey(userID)).Err()
 }
 
+func (s *RedisStore) AllowUserAction(ctx context.Context, userID int64, action string, limit int, window time.Duration) (bool, error) {
+	if limit <= 0 || window <= 0 {
+		return true, nil
+	}
+	key := rateLimitKey(userID, action)
+	count, err := s.client.Incr(ctx, key).Result()
+	if err != nil {
+		return false, err
+	}
+	if count == 1 {
+		if err := s.client.Expire(ctx, key, window).Err(); err != nil {
+			return false, err
+		}
+	}
+	return count <= int64(limit), nil
+}
+
+func (s *RedisStore) WithPairLock(ctx context.Context, pairID int64, ttl time.Duration, fn func() error) error {
+	if ttl <= 0 {
+		ttl = 5 * time.Second
+	}
+	key := pairLockKey(pairID)
+	token, err := lockToken()
+	if err != nil {
+		return err
+	}
+	locked, err := s.client.SetNX(ctx, key, token, ttl).Result()
+	if err != nil {
+		return err
+	}
+	if !locked {
+		return errors.New("pair lock is busy")
+	}
+	defer func() {
+		_ = s.client.Eval(ctx, `
+			if redis.call("GET", KEYS[1]) == ARGV[1] then
+				return redis.call("DEL", KEYS[1])
+			end
+			return 0
+		`, []string{key}, token).Err()
+	}()
+	return fn()
+}
+
 func (s *RedisStore) CacheFileID(ctx context.Context, renderHash, fileID string, ttl time.Duration) error {
 	return s.client.Set(ctx, "render:file:"+renderHash, fileID, ttl).Err()
 }
@@ -89,4 +135,20 @@ func fsmKey(userID int64) string {
 
 func pendingGameCompletionKey(userID int64) string {
 	return "game:completion:user:" + strconv.FormatInt(userID, 10)
+}
+
+func rateLimitKey(userID int64, action string) string {
+	return "rate:user:" + strconv.FormatInt(userID, 10) + ":" + action
+}
+
+func pairLockKey(pairID int64) string {
+	return "lock:pair:" + strconv.FormatInt(pairID, 10)
+}
+
+func lockToken() (string, error) {
+	var raw [18]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw[:]), nil
 }

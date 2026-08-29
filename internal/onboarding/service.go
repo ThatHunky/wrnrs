@@ -86,3 +86,34 @@ func (s *Service) ColorKeyboard(language string) telegram.InlineKeyboardMarkup {
 		{{Text: "Custom HEX", CallbackData: "theme:color:custom"}},
 	}}
 }
+
+func (s *Service) OwnContactKeyboard(language string) telegram.ReplyKeyboardMarkup {
+	share := "Share my contact"
+	skip := "Skip"
+	if language == "uk" {
+		share = "Поділитися моїм контактом"
+		skip = "Пропустити"
+	}
+	return telegram.ReplyKeyboardMarkup{
+		ResizeKeyboard: true,
+		Keyboard: [][]telegram.KeyboardButton{
+			{{Text: share, RequestContact: true}},
+			{{Text: skip}},
+		},
+	}
+}
+
+func (s *Service) BackgroundKeyboard(language string) telegram.InlineKeyboardMarkup {
+	skip := "Skip"
+	useDefault := "Use default"
+	upload := "Upload"
+	if language == "uk" {
+		skip = "Пропустити"
+		useDefault = "Стандартний фон"
+		upload = "Завантажити"
+	}
+	return telegram.InlineKeyboardMarkup{InlineKeyboard: [][]telegram.InlineKeyboardButton{
+		{{Text: useDefault, CallbackData: "onboarding:bg:default"}, {Text: skip, CallbackData: "onboarding:bg:skip"}},
+		{{Text: upload, CallbackData: "onboarding:bg:upload"}},
+	}}
+}

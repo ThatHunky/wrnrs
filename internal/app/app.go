@@ -36,6 +36,7 @@ type Bot interface {
 	EditMessageMedia(ctx context.Context, chatID, messageID int64, png []byte, caption string, replyMarkup any) error
 	AnswerCallbackQuery(ctx context.Context, callbackID, text string) error
 	AnswerPreCheckoutQuery(ctx context.Context, id string, ok bool, errorMessage string) error
+	AnswerInlineQuery(ctx context.Context, inlineQueryID string, results []telegram.InlineQueryResult, cacheTime int, isPersonal bool) error
 	SendInvoice(ctx context.Context, chatID int64, title, description, payload string, amount int64, replyMarkup any) error
 	DeleteMessage(ctx context.Context, chatID, messageID int64) error
 	GetFile(ctx context.Context, fileID string) (telegram.File, error)
@@ -49,6 +50,14 @@ type FSMStore interface {
 	SetPendingGameCompletion(ctx context.Context, userID int64, completion game.Completion, ttl time.Duration) error
 	PendingGameCompletion(ctx context.Context, userID int64) (game.Completion, bool, error)
 	ClearPendingGameCompletion(ctx context.Context, userID int64) error
+}
+
+type rateLimitStore interface {
+	AllowUserAction(ctx context.Context, userID int64, action string, limit int, window time.Duration) (bool, error)
+}
+
+type pairLockStore interface {
+	WithPairLock(ctx context.Context, pairID int64, ttl time.Duration, fn func() error) error
 }
 
 type ObjectStore interface {
@@ -140,11 +149,83 @@ func (a *App) HandleUpdate(ctx context.Context, update telegram.Update) error {
 	case update.CallbackQuery != nil:
 		return a.handleCallback(ctx, update.CallbackQuery)
 	case update.InlineQuery != nil:
-		a.logger.Info("inline query received", "from", update.InlineQuery.From.ID, "query", update.InlineQuery.Query)
-		return nil
+		return a.handleInlineQuery(ctx, update.InlineQuery)
 	default:
 		return nil
 	}
+}
+
+func (a *App) handleInlineQuery(ctx context.Context, query *telegram.InlineQuery) error {
+	if !a.cfg.FeatureInlineMode {
+		return nil
+	}
+	allowed, err := a.allowUserAction(ctx, query.From.ID, "inline", 20, time.Minute)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return a.bot.AnswerInlineQuery(ctx, query.ID, nil, 0, true)
+	}
+	if err := a.ensureTelegramUser(ctx, query.From); err != nil {
+		return err
+	}
+	lang := a.userLanguage(ctx, query.From.ID, normalizeLanguage(query.From.LanguageCode))
+	card, ok := a.safeInlineCard(lang)
+	if !ok {
+		return a.bot.AnswerInlineQuery(ctx, query.ID, nil, 0, true)
+	}
+	text, ok := card.LocalizedText(lang)
+	if !ok {
+		text, _ = card.LocalizedText("uk")
+	}
+	title := "WRNRS card"
+	if lang == "uk" {
+		title = "Картка між нами."
+	}
+	result := telegram.InlineQueryResultArticle{
+		Type:        "article",
+		ID:          "personal-card-" + card.ID,
+		Title:       title,
+		Description: text,
+		InputMessageContent: telegram.InputTextMessageContent{
+			MessageText: text,
+		},
+	}
+	return a.bot.AnswerInlineQuery(ctx, query.ID, []telegram.InlineQueryResult{result}, 0, true)
+}
+
+func (a *App) safeInlineCard(language string) (content.Card, bool) {
+	if a.deck == nil {
+		return content.Card{}, false
+	}
+	cards := a.deck.EligibleCards(content.Eligibility{Level: 1, BothUsersMatureOptedIn: false})
+	if len(cards) == 0 {
+		return content.Card{}, false
+	}
+	return cards[0], true
+}
+
+func (a *App) allowUserAction(ctx context.Context, userID int64, action string, limit int, window time.Duration) (bool, error) {
+	limiter, ok := a.state.(rateLimitStore)
+	if !ok || limiter == nil {
+		return true, nil
+	}
+	return limiter.AllowUserAction(ctx, userID, action, limit, window)
+}
+
+func (a *App) withActivePairLock(ctx context.Context, userID int64, fn func() error) error {
+	locker, ok := a.state.(pairLockStore)
+	if !ok || locker == nil || a.repo == nil {
+		return fn()
+	}
+	pair, err := a.repo.ActivePairForUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if pair == nil {
+		return fn()
+	}
+	return locker.WithPairLock(ctx, pair.ID, 5*time.Second, fn)
 }
 
 func (a *App) handleMessage(ctx context.Context, msg *telegram.Message) error {
@@ -194,7 +275,7 @@ func (a *App) handleMessage(ctx context.Context, msg *telegram.Message) error {
 				return err
 			}
 		}
-		return a.bot.SendMessage(ctx, msg.Chat.ID, "Admin menu. Use buttons, then send a numeric Telegram ID when prompted.", a.admin.Menu())
+		return a.bot.SendMessage(ctx, msg.Chat.ID, "Admin menu. Use buttons, then send a numeric Telegram ID when prompted.", a.adminMenu())
 	}
 	if handled, err := a.handleGameMessage(ctx, msg); handled || err != nil {
 		return err
@@ -287,9 +368,12 @@ func (a *App) handleCallback(ctx context.Context, cb *telegram.CallbackQuery) er
 		}
 		lang = a.userLanguage(ctx, cb.From.ID, lang)
 		if a.state != nil {
-			_ = a.state.SetFSM(ctx, cb.From.ID, string(onboarding.StepAdult), 24*time.Hour)
+			_ = a.state.SetFSM(ctx, cb.From.ID, string(onboarding.StepOwnContact), 24*time.Hour)
 		}
-		return a.editCallbackScreen(ctx, cb, chatID, a.i18n.Text(lang, "onboarding.adult"), a.onboarding.AdultKeyboard(lang))
+		return a.bot.SendMessage(ctx, chatID, onboardingContactPrompt(lang, a.i18n), a.onboarding.OwnContactKeyboard(lang))
+	case cb.Data == "onboarding:contact:skip":
+		lang = a.userLanguage(ctx, cb.From.ID, lang)
+		return a.advanceToAdultOnboarding(ctx, cb.From.ID, chatID, lang, cb)
 	case strings.HasPrefix(cb.Data, "onboarding:adult:"):
 		answer := strings.TrimPrefix(cb.Data, "onboarding:adult:")
 		is18Plus := answer == "yes"
@@ -320,6 +404,28 @@ func (a *App) handleCallback(ctx context.Context, cb *telegram.CallbackQuery) er
 			_ = a.state.SetFSM(ctx, cb.From.ID, string(onboarding.StepThemeColor), 24*time.Hour)
 		}
 		return a.editCallbackScreen(ctx, cb, chatID, a.i18n.Text(lang, "onboarding.theme_color"), a.onboarding.ColorKeyboard(lang))
+	case cb.Data == "onboarding:bg:skip":
+		lang = a.userLanguage(ctx, cb.From.ID, lang)
+		return a.finishOnboarding(ctx, cb.From.ID, chatID, lang, cb, themeSavedText(lang))
+	case cb.Data == "onboarding:bg:default":
+		lang = a.userLanguage(ctx, cb.From.ID, lang)
+		if err := a.repo.UpdateUserBackground(ctx, cb.From.ID, ""); err != nil {
+			return err
+		}
+		return a.finishOnboarding(ctx, cb.From.ID, chatID, lang, cb, themeSavedText(lang))
+	case cb.Data == "onboarding:bg:upload":
+		lang = a.userLanguage(ctx, cb.From.ID, lang)
+		count, err := a.repo.UserActiveUploadedBackgroundsCount(ctx, cb.From.ID)
+		if err != nil {
+			return err
+		}
+		if count >= 3 {
+			return a.editCallbackScreen(ctx, cb, chatID, a.i18n.Text(lang, "theme.upload_limit"), a.onboarding.BackgroundKeyboard(lang))
+		}
+		if a.state != nil {
+			_ = a.state.SetFSM(ctx, cb.From.ID, string(onboarding.StepBackground), 24*time.Hour)
+		}
+		return a.editCallbackScreen(ctx, cb, chatID, a.i18n.Text(lang, "theme.upload_prompt"), nil)
 	case cb.Data == "onboarding:language_menu":
 		complete, err := a.repo.UserOnboardingComplete(ctx, cb.From.ID)
 		if err != nil {
@@ -345,7 +451,19 @@ func (a *App) handleCallback(ctx context.Context, cb *telegram.CallbackQuery) er
 		if a.gameService == nil {
 			return a.editCallbackScreen(ctx, cb, chatID, a.i18n.Text(lang, "game.not_ready"), telegram.MainMenuKeyboard(lang))
 		}
-		result, err := a.gameService.Start(ctx, cb.From.ID)
+		allowed, err := a.allowUserAction(ctx, cb.From.ID, "game_callback", 60, time.Minute)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return a.editCallbackScreen(ctx, cb, chatID, rateLimitedText(lang), telegram.MainMenuKeyboardWithPair(lang, a.userHasPair(ctx, cb.From.ID)))
+		}
+		var result game.StartResult
+		err = a.withActivePairLock(ctx, cb.From.ID, func() error {
+			var startErr error
+			result, startErr = a.gameService.Start(ctx, cb.From.ID)
+			return startErr
+		})
 		if errors.Is(err, game.ErrActivePairRequired) {
 			return a.editCallbackScreen(ctx, cb, chatID,
 				a.i18n.Text(lang, "game.requires_pair"),
@@ -372,15 +490,33 @@ func (a *App) handleCallback(ctx context.Context, cb *telegram.CallbackQuery) er
 		if active, err := a.repo.ActivePairForUser(ctx, cb.From.ID); err != nil {
 			return err
 		} else if active != nil {
-			return a.editCallbackScreen(ctx, cb, chatID, a.activePairText(ctx, lang, active), telegram.MainMenuKeyboardWithPair(lang, true))
+			return a.editCallbackScreen(ctx, cb, chatID, a.activePairText(ctx, lang, active), activePairKeyboard(lang))
 		}
 		if a.state != nil {
 			_ = a.state.SetFSM(ctx, cb.From.ID, "pairing:await_identifier", 24*time.Hour)
 		}
 		return a.editCallbackScreen(ctx, cb, chatID, a.i18n.Text(lang, "pair.instructions"), pairMenuKeyboard(lang))
+	case cb.Data == "pair:break":
+		lang = a.userLanguage(ctx, cb.From.ID, lang)
+		return a.editCallbackScreen(ctx, cb, chatID, pairBreakConfirmText(lang), pairBreakConfirmKeyboard(lang))
+	case cb.Data == "pair:break_cancel":
+		lang = a.userLanguage(ctx, cb.From.ID, lang)
+		if active, err := a.repo.ActivePairForUser(ctx, cb.From.ID); err != nil {
+			return err
+		} else if active != nil {
+			return a.editCallbackScreen(ctx, cb, chatID, a.activePairText(ctx, lang, active), activePairKeyboard(lang))
+		}
+		return a.editCallbackScreen(ctx, cb, chatID, a.i18n.Text(lang, "pair.instructions"), pairMenuKeyboard(lang))
+	case cb.Data == "pair:break_confirm":
+		lang = a.userLanguage(ctx, cb.From.ID, lang)
+		return a.breakActivePair(ctx, cb, chatID, cb.From.ID, lang)
 	case cb.Data == "journal:open":
 		lang = a.userLanguage(ctx, cb.From.ID, lang)
-		return a.editCallbackScreen(ctx, cb, chatID, menuPanelText(lang, "journal"), telegram.MainMenuKeyboard(lang))
+		text, err := a.journalText(ctx, cb.From.ID, lang)
+		if err != nil {
+			return err
+		}
+		return a.editCallbackScreen(ctx, cb, chatID, text, telegram.MainMenuKeyboardWithPair(lang, a.userHasPair(ctx, cb.From.ID)))
 	case cb.Data == "settings:open":
 		lang = a.userLanguage(ctx, cb.From.ID, lang)
 		return a.editCallbackScreen(ctx, cb, chatID, menuPanelText(lang, "settings"), settingsKeyboard(lang, a.i18n, a.admin.IsAdmin(cb.From.ID)))
@@ -389,6 +525,10 @@ func (a *App) handleCallback(ctx context.Context, cb *telegram.CallbackQuery) er
 		return a.editCallbackScreen(ctx, cb, chatID, a.i18n.Text(lang, "settings.delete_confirm_prompt"), deleteAccountKeyboard(lang, a.i18n))
 	case cb.Data == "settings:delete_confirm":
 		lang = a.userLanguage(ctx, cb.From.ID, lang)
+		endedPair, err := a.repo.EndActivePair(ctx, cb.From.ID, time.Now().UTC())
+		if err != nil {
+			return err
+		}
 		if uploads, err := a.repo.GetUserUploadedBackgrounds(ctx, cb.From.ID); err == nil {
 			for _, upload := range uploads {
 				if a.objectStore != nil {
@@ -406,6 +546,20 @@ func (a *App) handleCallback(ctx context.Context, cb *telegram.CallbackQuery) er
 			if err := a.state.ClearPendingGameCompletion(ctx, cb.From.ID); err != nil {
 				return err
 			}
+			if endedPair != nil {
+				_ = a.state.ClearPendingGameCompletion(ctx, endedPair.UserAID)
+				_ = a.state.ClearPendingGameCompletion(ctx, endedPair.UserBID)
+				_ = a.state.ClearFSM(ctx, endedPair.UserAID)
+				_ = a.state.ClearFSM(ctx, endedPair.UserBID)
+			}
+		}
+		if endedPair != nil {
+			partnerID := endedPair.UserAID
+			if partnerID == cb.From.ID {
+				partnerID = endedPair.UserBID
+			}
+			partnerLang := a.userLanguage(ctx, partnerID, lang)
+			_ = a.bot.SendMessage(ctx, partnerID, pairEndedText(partnerLang), telegram.MainMenuKeyboardWithPair(partnerLang, false))
 		}
 		return a.editCallbackScreen(ctx, cb, chatID, a.i18n.Text(lang, "settings.deleted"), nil)
 	case cb.Data == "custom_questions:menu":
@@ -542,7 +696,7 @@ func (a *App) handleCallback(ctx context.Context, cb *telegram.CallbackQuery) er
 				return err
 			}
 		} else {
-			if bg, ok := a.backgrounds.Background(bgID); ok {
+			if bg, ok := backgroundByID(a.backgrounds, bgID); ok {
 				if bg.Premium {
 					unlocked := a.userHasThemeEntitlementBool(ctx, cb.From.ID, storage.EntitlementBackground, bg.ID)
 					if !unlocked {
@@ -555,9 +709,12 @@ func (a *App) handleCallback(ctx context.Context, cb *telegram.CallbackQuery) er
 				}
 			} else {
 				// Uploaded asset selection
-				if asset, err := a.repo.GetThemeAsset(ctx, bgID); err == nil && asset.OwnerUserID == cb.From.ID && asset.Status == "active" {
+				if asset, err := a.repo.GetThemeAsset(ctx, bgID); err == nil && asset.Status == "active" && a.canUseUploadedBackground(ctx, cb.From.ID, asset) {
 					if err := a.repo.UpdateUserBackground(ctx, cb.From.ID, bgID); err != nil {
 						return err
+					}
+					if asset.OwnerUserID == cb.From.ID {
+						_ = a.shareUploadedBackgroundWithActivePair(ctx, cb.From.ID, bgID)
 					}
 				}
 			}
@@ -565,6 +722,13 @@ func (a *App) handleCallback(ctx context.Context, cb *telegram.CallbackQuery) er
 		return a.themeMenu(ctx, cb, chatID, lang)
 	case cb.Data == "theme:bg:upload":
 		lang = a.userLanguage(ctx, cb.From.ID, lang)
+		allowed, err := a.allowUserAction(ctx, cb.From.ID, "upload", 5, time.Hour)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return a.editCallbackScreen(ctx, cb, chatID, rateLimitedText(lang), a.themeBgKeyboard(ctx, cb.From.ID, lang))
+		}
 		count, err := a.repo.UserActiveUploadedBackgroundsCount(ctx, cb.From.ID)
 		if err != nil {
 			return err
@@ -597,12 +761,8 @@ func (a *App) handleCallback(ctx context.Context, cb *telegram.CallbackQuery) er
 			if a.objectStore != nil {
 				_ = a.objectStore.Delete(ctx, asset.MinioObjectKey)
 			}
+			_ = a.repo.ResetSelectedBackgroundAsset(ctx, assetID)
 			_ = a.repo.DeleteThemeAsset(ctx, assetID)
-			// If selected background was this one, reset to default
-			profile, err := a.repo.UserProfile(ctx, cb.From.ID)
-			if err == nil && profile.SelectedBackgroundAssetID == assetID {
-				_ = a.repo.UpdateUserBackground(ctx, cb.From.ID, "")
-			}
 		}
 		title := "Background Picker\n\nChoose built-in backgrounds or upload custom ones (up to 3)."
 		if lang == "uk" {
@@ -629,13 +789,10 @@ func (a *App) handleCallback(ctx context.Context, cb *telegram.CallbackQuery) er
 			return err
 		}
 		if !complete {
-			if err := a.repo.MarkOnboardingComplete(ctx, cb.From.ID); err != nil {
-				return err
-			}
 			if a.state != nil {
-				_ = a.state.ClearFSM(ctx, cb.From.ID)
+				_ = a.state.SetFSM(ctx, cb.From.ID, string(onboarding.StepBackground), 24*time.Hour)
 			}
-			return a.editCallbackScreen(ctx, cb, chatID, themeSavedText(lang), telegram.MainMenuKeyboardWithPair(lang, a.userHasPair(ctx, cb.From.ID)))
+			return a.editCallbackScreen(ctx, cb, chatID, onboardingBackgroundPrompt(lang, a.i18n), a.onboarding.BackgroundKeyboard(lang))
 		}
 		if a.state != nil {
 			_ = a.state.ClearFSM(ctx, cb.From.ID)
@@ -698,7 +855,12 @@ func (a *App) handleGameMessage(ctx context.Context, msg *telegram.Message) (boo
 	if a.gameService == nil {
 		return true, a.bot.SendMessage(ctx, msg.Chat.ID, a.i18n.Text(lang, "game.not_ready"), telegram.ControlsKeyboard(lang))
 	}
-	result, err := a.gameService.Submit(ctx, msg.From.ID, sessionID, game.CompletionTyped, answer)
+	var result game.SubmitResult
+	err = a.withActivePairLock(ctx, msg.From.ID, func() error {
+		var submitErr error
+		result, submitErr = a.gameService.Submit(ctx, msg.From.ID, sessionID, game.CompletionTyped, answer)
+		return submitErr
+	})
 	if err != nil {
 		return true, err
 	}
@@ -769,6 +931,13 @@ func (a *App) handleGameCallback(ctx context.Context, cb *telegram.CallbackQuery
 	if err != nil || sessionID <= 0 {
 		return a.editCallbackScreen(ctx, cb, chatID, a.i18n.Text(language, "game.card_stale"), telegram.MainMenuKeyboard(language))
 	}
+	allowed, err := a.allowUserAction(ctx, cb.From.ID, "game_callback", 60, time.Minute)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return a.editCallbackScreen(ctx, cb, chatID, rateLimitedText(language), telegram.MainMenuKeyboardWithPair(language, a.userHasPair(ctx, cb.From.ID)))
+	}
 
 	controls := telegram.CardControlsForQuestion(language, rawID)
 	var text string
@@ -781,7 +950,12 @@ func (a *App) handleGameCallback(ctx context.Context, cb *telegram.CallbackQuery
 		}
 		text = a.i18n.Text(language, "game.answer_prompt")
 	case "skip":
-		result, err := a.gameService.Submit(ctx, cb.From.ID, sessionID, game.CompletionSkip, "")
+		var result game.SubmitResult
+		err := a.withActivePairLock(ctx, cb.From.ID, func() error {
+			var submitErr error
+			result, submitErr = a.gameService.Submit(ctx, cb.From.ID, sessionID, game.CompletionSkip, "")
+			return submitErr
+		})
 		if err != nil {
 			return err
 		}
@@ -795,7 +969,12 @@ func (a *App) handleGameCallback(ctx context.Context, cb *telegram.CallbackQuery
 		}
 		text = a.i18n.Text(language, "game.waiting_partner")
 	case "in_person":
-		result, err := a.gameService.Submit(ctx, cb.From.ID, sessionID, game.CompletionInPerson, "")
+		var result game.SubmitResult
+		err := a.withActivePairLock(ctx, cb.From.ID, func() error {
+			var submitErr error
+			result, submitErr = a.gameService.Submit(ctx, cb.From.ID, sessionID, game.CompletionInPerson, "")
+			return submitErr
+		})
 		if err != nil {
 			return err
 		}
@@ -816,7 +995,12 @@ func (a *App) handleGameCallback(ctx context.Context, cb *telegram.CallbackQuery
 		}
 		text = a.i18n.Text(language, "game.paused")
 	case "next":
-		result, err := a.gameService.Next(ctx, cb.From.ID, sessionID)
+		var result game.StartResult
+		err := a.withActivePairLock(ctx, cb.From.ID, func() error {
+			var nextErr error
+			result, nextErr = a.gameService.Next(ctx, cb.From.ID, sessionID)
+			return nextErr
+		})
 		if err != nil {
 			return err
 		}
@@ -854,6 +1038,13 @@ func (a *App) handlePairingMessage(ctx context.Context, msg *telegram.Message) (
 	}
 	if !ok {
 		return true, a.bot.SendMessage(ctx, msg.Chat.ID, a.i18n.Text(lang, "pair.invalid_identifier"), pairMenuKeyboard(lang))
+	}
+	allowed, err := a.allowUserAction(ctx, msg.From.ID, "pairing", 10, time.Hour)
+	if err != nil {
+		return true, err
+	}
+	if !allowed {
+		return true, a.bot.SendMessage(ctx, msg.Chat.ID, rateLimitedText(lang), pairMenuKeyboard(lang))
 	}
 	request, err := a.createPairRequest(ctx, msg.From.ID, identifier)
 	if err != nil {
@@ -946,7 +1137,12 @@ func (a *App) acceptGameInvite(ctx context.Context, cb *telegram.CallbackQuery, 
 	if a.gameService == nil {
 		return a.editCallbackScreen(ctx, cb, chatID, a.i18n.Text(lang, "game.not_ready"), telegram.MainMenuKeyboardWithPair(lang, true))
 	}
-	started, err := a.gameService.Accept(ctx, userID, sessionID)
+	var started game.StartedResult
+	err = a.withActivePairLock(ctx, userID, func() error {
+		var acceptErr error
+		started, acceptErr = a.gameService.Accept(ctx, userID, sessionID)
+		return acceptErr
+	})
 	if errors.Is(err, game.ErrGameInviteExpired) {
 		return a.editCallbackScreen(ctx, cb, chatID, a.i18n.Text(lang, "game.invite_expired"), telegram.MainMenuKeyboardWithPair(lang, true))
 	}
@@ -965,7 +1161,9 @@ func (a *App) declineGameInvite(ctx context.Context, cb *telegram.CallbackQuery,
 	if a.gameService == nil {
 		return a.editCallbackScreen(ctx, cb, chatID, a.i18n.Text(lang, "game.not_ready"), telegram.MainMenuKeyboardWithPair(lang, true))
 	}
-	if err := a.gameService.Decline(ctx, userID, sessionID); err != nil {
+	if err := a.withActivePairLock(ctx, userID, func() error {
+		return a.gameService.Decline(ctx, userID, sessionID)
+	}); err != nil {
 		return err
 	}
 	return a.editCallbackScreen(ctx, cb, chatID, a.i18n.Text(lang, "game.invite_declined"), telegram.MainMenuKeyboardWithPair(lang, true))
@@ -1009,6 +1207,9 @@ func (a *App) sendGameCard(ctx context.Context, chatID int64, language string, c
 
 func (a *App) sendRevealToPair(ctx context.Context, result game.SubmitResult) error {
 	session := result.Session
+	if err := a.maybeSendSupportPromptBeforeReveal(ctx, result.Pair); err != nil {
+		return err
+	}
 	for _, userID := range []int64{result.Pair.UserAID, result.Pair.UserBID} {
 		lang := a.userLanguage(ctx, userID, "uk")
 		if err := a.bot.SendMessage(ctx, userID, a.revealText(ctx, lang, result), nextCardKeyboard(lang, session.ID)); err != nil {
@@ -1016,6 +1217,54 @@ func (a *App) sendRevealToPair(ctx context.Context, result game.SubmitResult) er
 		}
 	}
 	return nil
+}
+
+func (a *App) maybeSendSupportPromptBeforeReveal(ctx context.Context, pair storage.Pair) error {
+	if a.repo == nil {
+		return nil
+	}
+	lastPromptedAt, err := a.repo.LastSupportPromptAt(ctx, pair.ID)
+	if err != nil {
+		return err
+	}
+	userAPremium, err := a.repo.UserHasEntitlement(ctx, pair.UserAID, storage.EntitlementPremiumAccess, storage.EntitlementPremiumAccess)
+	if err != nil {
+		return err
+	}
+	userBPremium, err := a.repo.UserHasEntitlement(ctx, pair.UserBID, storage.EntitlementPremiumAccess, storage.EntitlementPremiumAccess)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	if !game.ShouldShowSupportPrompt(game.SupportPromptInput{
+		Now:            now,
+		LastPromptedAt: lastPromptedAt,
+		UserAPremium:   userAPremium,
+		UserBPremium:   userBPremium,
+		Interval:       a.cfg.SupportPromptInterval,
+	}) {
+		return nil
+	}
+	for _, userID := range []int64{pair.UserAID, pair.UserBID} {
+		lang := a.userLanguage(ctx, userID, "uk")
+		if err := a.bot.SendMessage(ctx, userID, a.supportPromptText(lang), telegram.MainMenuKeyboardWithPair(lang, true)); err != nil {
+			return err
+		}
+	}
+	if err := a.repo.MarkSupportPrompted(ctx, pair.ID, now, 0); err != nil {
+		return err
+	}
+	if a.cfg.SupportPromptDelay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(a.cfg.SupportPromptDelay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (a *App) revealText(ctx context.Context, language string, result game.SubmitResult) string {
@@ -1042,6 +1291,114 @@ func (a *App) revealText(ctx context.Context, language string, result game.Submi
 		lines = append(lines, fmt.Sprintf("%s: %s", name, value))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (a *App) journalText(ctx context.Context, userID int64, language string) (string, error) {
+	if a.repo == nil {
+		return menuPanelText(language, "journal"), nil
+	}
+	pair, err := a.repo.ActivePairForUser(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	if pair == nil {
+		return menuPanelText(language, "journal"), nil
+	}
+	entries, err := a.repo.PairJournalEntries(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	if len(entries) == 0 {
+		return menuPanelText(language, "journal"), nil
+	}
+	cipher, err := storage.NewAnswerCipher(a.cfg.AnswerEncryptionKey)
+	if err != nil {
+		return "", err
+	}
+	userA18, userAMature, err := a.repo.UserMaturity(ctx, pair.UserAID)
+	if err != nil {
+		return "", err
+	}
+	userB18, userBMature, err := a.repo.UserMaturity(ctx, pair.UserBID)
+	if err != nil {
+		return "", err
+	}
+	showMature := userA18 && userAMature && userB18 && userBMature
+	lines := []string{journalTitle(language)}
+	for _, entry := range entries {
+		if entry.RequiresMature && !showMature {
+			continue
+		}
+		question := journalQuestionText(entry, language)
+		lines = append(lines, "", fmt.Sprintf("%s %d · %s", journalLevelLabel(language), entry.Level, journalQuestionLabel(language)))
+		lines = append(lines, question)
+		for _, answer := range entry.Answers {
+			name := a.displayNameOrFallback(ctx, answer.UserID, language, "user")
+			value, err := a.journalAnswerText(language, cipher, answer)
+			if err != nil {
+				return "", err
+			}
+			lines = append(lines, fmt.Sprintf("%s: %s", name, value))
+		}
+	}
+	if len(lines) == 1 {
+		return menuPanelText(language, "journal"), nil
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+func (a *App) journalAnswerText(language string, cipher *storage.AnswerCipher, answer storage.JournalAnswer) (string, error) {
+	switch game.CompletionType(answer.CompletionType) {
+	case game.CompletionTyped:
+		if len(answer.AnswerTextEncrypted) == 0 {
+			return a.i18n.Text(language, "game.reveal_empty"), nil
+		}
+		return cipher.Decrypt(answer.AnswerTextEncrypted)
+	case game.CompletionSkip:
+		return a.i18n.Text(language, "game.reveal_skipped"), nil
+	case game.CompletionInPerson:
+		return a.i18n.Text(language, "game.reveal_in_person"), nil
+	default:
+		return a.i18n.Text(language, "game.reveal_empty"), nil
+	}
+}
+
+func journalQuestionText(entry storage.JournalEntry, language string) string {
+	text := strings.TrimSpace(entry.QuestionTextUK)
+	if language != "uk" {
+		text = strings.TrimSpace(entry.QuestionTextEN)
+	}
+	if text == "" {
+		text = strings.TrimSpace(entry.QuestionTextUK)
+	}
+	if text == "" {
+		text = strings.TrimSpace(entry.QuestionTextEN)
+	}
+	if text == "" {
+		text = entry.QuestionID
+	}
+	return text
+}
+
+func journalTitle(language string) string {
+	if language == "uk" {
+		return "Журнал"
+	}
+	return "Journal"
+}
+
+func journalLevelLabel(language string) string {
+	if language == "uk" {
+		return "Рівень"
+	}
+	return "Level"
+}
+
+func journalQuestionLabel(language string) string {
+	if language == "uk" {
+		return "Питання"
+	}
+	return "Question"
 }
 
 func (a *App) pairError(ctx context.Context, chatID, userID int64, err error) error {
@@ -1080,6 +1437,23 @@ func (a *App) handleOnboardingText(ctx context.Context, msg *telegram.Message) (
 			return true, err
 		}
 		return true, a.bot.SendMessage(ctx, msg.Chat.ID, a.i18n.Text(lang, "onboarding.gender"), a.onboarding.GenderKeyboard(lang))
+	case onboarding.StepOwnContact:
+		if msg.Contact != nil {
+			if msg.Contact.UserID != 0 && msg.Contact.UserID != msg.From.ID {
+				return true, a.bot.SendMessage(ctx, msg.Chat.ID, onboardingContactPrompt(lang, a.i18n), a.onboarding.OwnContactKeyboard(lang))
+			}
+			phoneHash := a.pairing.PhoneHash(msg.Contact.PhoneNumber)
+			if phoneHash != "" {
+				if err := a.repo.UpdateUserPhoneHash(ctx, msg.From.ID, phoneHash); err != nil {
+					return true, err
+				}
+			}
+			return true, a.advanceToAdultOnboarding(ctx, msg.From.ID, msg.Chat.ID, lang, nil)
+		}
+		if isOnboardingSkipText(msg.Text) {
+			return true, a.advanceToAdultOnboarding(ctx, msg.From.ID, msg.Chat.ID, lang, nil)
+		}
+		return true, a.bot.SendMessage(ctx, msg.Chat.ID, onboardingContactPrompt(lang, a.i18n), a.onboarding.OwnContactKeyboard(lang))
 	case onboarding.StepThemeColor:
 		color := strings.TrimSpace(msg.Text)
 		if !strings.HasPrefix(color, "#") {
@@ -1096,20 +1470,17 @@ func (a *App) handleOnboardingText(ctx context.Context, msg *telegram.Message) (
 			return true, err
 		}
 		if !complete {
-			if err := a.repo.MarkOnboardingComplete(ctx, msg.From.ID); err != nil {
+			if err := a.state.SetFSM(ctx, msg.From.ID, string(onboarding.StepBackground), 24*time.Hour); err != nil {
 				return true, err
 			}
-			if err := a.state.ClearFSM(ctx, msg.From.ID); err != nil {
-				return true, err
-			}
-			return true, a.sendMainMenu(ctx, msg.Chat.ID, lang, themeSavedText(lang))
+			return true, a.bot.SendMessage(ctx, msg.Chat.ID, onboardingBackgroundPrompt(lang, a.i18n), a.onboarding.BackgroundKeyboard(lang))
 		}
 		if err := a.state.ClearFSM(ctx, msg.From.ID); err != nil {
 			return true, err
 		}
 		return true, a.sendThemeMenu(ctx, msg.Chat.ID, lang, themeSavedText(lang))
 	case onboarding.StepBackground:
-		if len(msg.Photo) == 0 {
+		if len(msg.Photo) == 0 && msg.Document == nil {
 			return true, a.bot.SendMessage(ctx, msg.Chat.ID, a.i18n.Text(lang, "theme.upload_prompt"), nil)
 		}
 		return true, a.handleBackgroundUpload(ctx, msg, lang)
@@ -1133,7 +1504,7 @@ func (a *App) handleAdminText(ctx context.Context, msg *telegram.Message) (bool,
 			if err := a.state.ClearFSM(ctx, msg.From.ID); err != nil {
 				return true, err
 			}
-			return true, a.bot.SendMessage(ctx, msg.Chat.ID, response, a.admin.Menu())
+			return true, a.bot.SendMessage(ctx, msg.Chat.ID, response, a.adminMenu())
 		}
 	}
 	action, ok, err := admin.ParseCommand(msg.Text)
@@ -1147,7 +1518,7 @@ func (a *App) handleAdminText(ctx context.Context, msg *telegram.Message) (bool,
 	if execErr != nil {
 		return true, a.bot.SendMessage(ctx, msg.Chat.ID, execErr.Error(), nil)
 	}
-	return true, a.bot.SendMessage(ctx, msg.Chat.ID, response, a.admin.Menu())
+	return true, a.bot.SendMessage(ctx, msg.Chat.ID, response, a.adminMenu())
 }
 
 func (a *App) executeAdminAction(ctx context.Context, adminID int64, targetRef, action, unlockType, unlockID string) (string, error) {
@@ -1321,11 +1692,15 @@ func (a *App) sendPremiumInvoice(ctx context.Context, chatID, userID int64, lang
 }
 
 func (a *App) sendPaymentSupport(ctx context.Context, chatID int64, language string) error {
+	return a.bot.SendMessage(ctx, chatID, a.supportPromptText(language), telegram.MainMenuKeyboard(language))
+}
+
+func (a *App) supportPromptText(language string) string {
 	text := a.i18n.Text(language, "payments.support")
 	if a.cfg.Donation.MonobankURL != "" || a.cfg.Donation.CardNumber != "" {
 		text += "\n\n" + a.supportText(language)
 	}
-	return a.bot.SendMessage(ctx, chatID, text, telegram.MainMenuKeyboard(language))
+	return text
 }
 
 func (a *App) supportText(language string) string {
@@ -1464,6 +1839,33 @@ func (a *App) sendMainMenu(ctx context.Context, chatID int64, language, text str
 	return a.bot.SendMessage(ctx, chatID, text, telegram.MainMenuKeyboardWithPair(language, hasPair))
 }
 
+func (a *App) advanceToAdultOnboarding(ctx context.Context, userID, chatID int64, language string, cb *telegram.CallbackQuery) error {
+	if a.state != nil {
+		_ = a.state.SetFSM(ctx, userID, string(onboarding.StepAdult), 24*time.Hour)
+	}
+	return a.editCallbackScreen(ctx, cb, chatID, a.i18n.Text(language, "onboarding.adult"), a.onboarding.AdultKeyboard(language))
+}
+
+func (a *App) finishOnboarding(ctx context.Context, userID, chatID int64, language string, cb *telegram.CallbackQuery, prefix string) error {
+	complete, err := a.repo.UserOnboardingComplete(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !complete {
+		if err := a.repo.MarkOnboardingComplete(ctx, userID); err != nil {
+			return err
+		}
+	}
+	if a.state != nil {
+		_ = a.state.ClearFSM(ctx, userID)
+	}
+	menuText, hasPair := a.buildMainMenuText(ctx, userID, language)
+	if strings.TrimSpace(prefix) != "" {
+		menuText = strings.TrimSpace(prefix) + "\n\n" + menuText
+	}
+	return a.editCallbackScreen(ctx, cb, chatID, menuText, telegram.MainMenuKeyboardWithPair(language, hasPair))
+}
+
 func (a *App) editCallbackScreen(ctx context.Context, cb *telegram.CallbackQuery, chatID int64, text string, replyMarkup any) error {
 	if cb != nil && cb.Message != nil {
 		if len(cb.Message.Photo) > 0 {
@@ -1485,6 +1887,35 @@ func (a *App) editCallbackScreen(ctx context.Context, cb *telegram.CallbackQuery
 		}
 	}
 	return a.bot.SendMessage(ctx, chatID, text, replyMarkup)
+}
+
+func onboardingContactPrompt(language string, bundle *i18n.Bundle) string {
+	if text := bundle.Text(language, "onboarding.own_contact"); text != "onboarding.own_contact" {
+		return text
+	}
+	if language == "uk" {
+		return "Можеш поділитися власним контактом для пошуку пари за телефоном або пропустити цей крок."
+	}
+	return "You can share your own contact for phone-based pairing, or skip this step."
+}
+
+func onboardingBackgroundPrompt(language string, bundle *i18n.Bundle) string {
+	if text := bundle.Text(language, "onboarding.background"); text != "onboarding.background" {
+		return text
+	}
+	if language == "uk" {
+		return "Оберіть фон карток: стандартний, завантажений власний або пропустіть."
+	}
+	return "Choose a card background: default, custom upload, or skip."
+}
+
+func isOnboardingSkipText(text string) bool {
+	switch strings.ToLower(strings.TrimSpace(text)) {
+	case "skip", "пропустити":
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *App) defaultQuestionID(language string) string {
@@ -1585,10 +2016,60 @@ func (a *App) userHasPair(ctx context.Context, userID int64) bool {
 	return err == nil && pair != nil
 }
 
+func (a *App) shareUploadedBackgroundWithActivePair(ctx context.Context, userID int64, assetID string) error {
+	pair, err := a.repo.ActivePairForUser(ctx, userID)
+	if err != nil || pair == nil {
+		return err
+	}
+	return a.repo.CreatePairThemeShare(ctx, pair.ID, assetID, userID)
+}
+
+func (a *App) canUseUploadedBackground(ctx context.Context, userID int64, asset storage.ThemeAsset) bool {
+	if asset.OwnerUserID == userID {
+		return true
+	}
+	pair, err := a.repo.ActivePairForUser(ctx, userID)
+	if err != nil || pair == nil {
+		return false
+	}
+	ok, err := a.repo.PairHasActiveThemeShare(ctx, pair.ID, asset.ID)
+	return err == nil && ok
+}
+
+func backgroundByID(catalog *content.BackgroundCatalog, bgID string) (content.Background, bool) {
+	if catalog == nil {
+		return content.Background{}, false
+	}
+	return catalog.Background(bgID)
+}
+
 func (a *App) activePairText(ctx context.Context, language string, pair *storage.Pair) string {
 	userA := a.displayNameOrFallback(ctx, pair.UserAID, language, "user")
 	userB := a.displayNameOrFallback(ctx, pair.UserBID, language, "partner")
 	return fmt.Sprintf(a.i18n.Text(language, "pair.active"), userA, userB)
+}
+
+func (a *App) breakActivePair(ctx context.Context, cb *telegram.CallbackQuery, chatID, userID int64, language string) error {
+	pair, err := a.repo.EndActivePair(ctx, userID, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	if pair == nil {
+		return a.editCallbackScreen(ctx, cb, chatID, a.i18n.Text(language, "pair.not_found"), telegram.MainMenuKeyboardWithPair(language, false))
+	}
+	if a.state != nil {
+		_ = a.state.ClearPendingGameCompletion(ctx, pair.UserAID)
+		_ = a.state.ClearPendingGameCompletion(ctx, pair.UserBID)
+		_ = a.state.ClearFSM(ctx, pair.UserAID)
+		_ = a.state.ClearFSM(ctx, pair.UserBID)
+	}
+	partnerID := pair.UserAID
+	if partnerID == userID {
+		partnerID = pair.UserBID
+	}
+	partnerLang := a.userLanguage(ctx, partnerID, language)
+	_ = a.bot.SendMessage(ctx, partnerID, pairEndedText(partnerLang), telegram.MainMenuKeyboardWithPair(partnerLang, false))
+	return a.editCallbackScreen(ctx, cb, chatID, pairEndedText(language), telegram.MainMenuKeyboardWithPair(language, false))
 }
 
 func (a *App) displayNameOrFallback(ctx context.Context, userID int64, language, fallbackKind string) string {
@@ -1652,6 +2133,53 @@ func pairMenuKeyboard(language string) telegram.InlineKeyboardMarkup {
 	return telegram.InlineKeyboardMarkup{InlineKeyboard: [][]telegram.InlineKeyboardButton{
 		{{Text: back, CallbackData: "menu:main"}},
 	}}
+}
+
+func activePairKeyboard(language string) telegram.InlineKeyboardMarkup {
+	breakText := "Break pair"
+	back := "Back to menu"
+	if language == "uk" {
+		breakText = "Розірвати пару"
+		back = "Назад до меню"
+	}
+	return telegram.InlineKeyboardMarkup{InlineKeyboard: [][]telegram.InlineKeyboardButton{
+		{{Text: breakText, CallbackData: "pair:break"}},
+		{{Text: back, CallbackData: "menu:main"}},
+	}}
+}
+
+func pairBreakConfirmKeyboard(language string) telegram.InlineKeyboardMarkup {
+	confirm := "Yes, break pair"
+	cancel := "Cancel"
+	if language == "uk" {
+		confirm = "Так, розірвати"
+		cancel = "Скасувати"
+	}
+	return telegram.InlineKeyboardMarkup{InlineKeyboard: [][]telegram.InlineKeyboardButton{
+		{{Text: confirm, CallbackData: "pair:break_confirm"}},
+		{{Text: cancel, CallbackData: "pair:break_cancel"}},
+	}}
+}
+
+func pairBreakConfirmText(language string) string {
+	if language == "uk" {
+		return "Розірвати пару?\n\nПоточна гра буде скасована, а спільні фони буде прибрано."
+	}
+	return "Break this pair?\n\nThe current game will be cancelled and shared backgrounds will be removed."
+}
+
+func pairEndedText(language string) string {
+	if language == "uk" {
+		return "Пару розірвано."
+	}
+	return "Pair ended."
+}
+
+func rateLimitedText(language string) string {
+	if language == "uk" {
+		return "Забагато спроб. Спробуйте трохи пізніше."
+	}
+	return "Too many attempts. Try again later."
 }
 
 func customColorKeyboard(language string) telegram.InlineKeyboardMarkup {
@@ -1721,6 +2249,40 @@ func settingsKeyboard(language string, bundle *i18n.Bundle, isAdmin bool) telegr
 		{Text: mainMenuText, CallbackData: "menu:main"},
 	})
 
+	return telegram.InlineKeyboardMarkup{InlineKeyboard: rows}
+}
+
+func (a *App) adminMenu() telegram.InlineKeyboardMarkup {
+	rows := [][]telegram.InlineKeyboardButton{
+		{
+			{Text: "Grant premium", CallbackData: "admin:grant:premium_access:premium_access"},
+			{Text: "Revoke premium", CallbackData: "admin:revoke:premium_access:premium_access"},
+		},
+	}
+	if a.styles != nil {
+		for _, style := range a.styles.Styles {
+			rows = append(rows, []telegram.InlineKeyboardButton{
+				{Text: "Grant style " + style.ID, CallbackData: "admin:grant:style:" + style.ID},
+				{Text: "Revoke style " + style.ID, CallbackData: "admin:revoke:style:" + style.ID},
+			})
+		}
+	}
+	if a.fonts != nil {
+		for _, font := range a.fonts.Fonts {
+			rows = append(rows, []telegram.InlineKeyboardButton{
+				{Text: "Grant font " + font.ID, CallbackData: "admin:grant:font:" + font.ID},
+				{Text: "Revoke font " + font.ID, CallbackData: "admin:revoke:font:" + font.ID},
+			})
+		}
+	}
+	if a.backgrounds != nil {
+		for _, bg := range a.backgrounds.Backgrounds {
+			rows = append(rows, []telegram.InlineKeyboardButton{
+				{Text: "Grant bg " + bg.ID, CallbackData: "admin:grant:background:" + bg.ID},
+				{Text: "Revoke bg " + bg.ID, CallbackData: "admin:revoke:background:" + bg.ID},
+			})
+		}
+	}
 	return telegram.InlineKeyboardMarkup{InlineKeyboard: rows}
 }
 
@@ -2199,6 +2761,19 @@ func (a *App) themeBgKeyboard(ctx context.Context, userID int64, language string
 		}
 	}
 
+	sharedUploads, sharedErr := a.repo.SharedUploadedBackgroundsForUser(ctx, userID)
+	if sharedErr == nil && len(sharedUploads) > 0 {
+		for i, upload := range sharedUploads {
+			upName := fmt.Sprintf("Partner Background %d", i+1)
+			if language == "uk" {
+				upName = fmt.Sprintf("Фон партнера %d", i+1)
+			}
+			rows = append(rows, []telegram.InlineKeyboardButton{
+				{Text: upName, CallbackData: "theme:bg:select:" + upload.ID},
+			})
+		}
+	}
+
 	if len(uploads) < 3 {
 		upBtn := "📤 Upload Custom Background"
 		if language == "uk" {
@@ -2233,19 +2808,28 @@ func premiumLockKeyboard(language string) telegram.InlineKeyboardMarkup {
 }
 
 func (a *App) handleBackgroundUpload(ctx context.Context, msg *telegram.Message, lang string) error {
-	if len(msg.Photo) == 0 {
+	allowed, err := a.allowUserAction(ctx, msg.From.ID, "upload", 5, time.Hour)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return a.bot.SendMessage(ctx, msg.Chat.ID, rateLimitedText(lang), nil)
+	}
+	if msg.Document != nil && !supportedBackgroundDocument(msg.Document) {
+		return a.bot.SendMessage(ctx, msg.Chat.ID, a.i18n.Text(lang, "theme.upload_failed"), nil)
+	}
+	fileID, fileSize, ok := backgroundUploadFile(msg)
+	if !ok {
 		return a.bot.SendMessage(ctx, msg.Chat.ID, a.i18n.Text(lang, "theme.upload_prompt"), nil)
 	}
 
-	photo := msg.Photo[len(msg.Photo)-1]
-
-	if photo.FileSize > render.DefaultMaxUploadBytes {
+	if fileSize > render.DefaultMaxUploadBytes {
 		return a.bot.SendMessage(ctx, msg.Chat.ID, a.i18n.Text(lang, "theme.upload_failed"), nil)
 	}
 
-	tgFile, err := a.bot.GetFile(ctx, photo.FileID)
+	tgFile, err := a.bot.GetFile(ctx, fileID)
 	if err != nil {
-		a.logger.Error("telegram getFile failed", "error", err, "file_id", photo.FileID)
+		a.logger.Error("telegram getFile failed", "error", err, "file_id", fileID)
 		return a.bot.SendMessage(ctx, msg.Chat.ID, a.i18n.Text(lang, "theme.upload_failed"), nil)
 	}
 
@@ -2284,12 +2868,49 @@ func (a *App) handleBackgroundUpload(ctx context.Context, msg *telegram.Message,
 	if err := a.repo.UpdateUserBackground(ctx, msg.From.ID, assetID); err != nil {
 		a.logger.Error("select custom background failed", "error", err)
 	}
+	_ = a.shareUploadedBackgroundWithActivePair(ctx, msg.From.ID, assetID)
 
 	if a.state != nil {
 		_ = a.state.ClearFSM(ctx, msg.From.ID)
 	}
 
+	complete, err := a.repo.UserOnboardingComplete(ctx, msg.From.ID)
+	if err != nil {
+		return err
+	}
+	if !complete {
+		return a.finishOnboarding(ctx, msg.From.ID, msg.Chat.ID, lang, nil, a.i18n.Text(lang, "theme.upload_success"))
+	}
 	return a.sendThemeMenu(ctx, msg.Chat.ID, lang, a.i18n.Text(lang, "theme.upload_success"))
+}
+
+func backgroundUploadFile(msg *telegram.Message) (fileID string, fileSize int64, ok bool) {
+	if len(msg.Photo) > 0 {
+		photo := msg.Photo[len(msg.Photo)-1]
+		return photo.FileID, photo.FileSize, true
+	}
+	if msg.Document == nil {
+		return "", 0, false
+	}
+	if !supportedBackgroundDocument(msg.Document) {
+		return "", 0, false
+	}
+	return msg.Document.FileID, msg.Document.FileSize, true
+}
+
+func supportedBackgroundDocument(document *telegram.Document) bool {
+	if document == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(document.MimeType)) {
+	case "image/jpeg", "image/png", "image/webp":
+		return true
+	}
+	name := strings.ToLower(strings.TrimSpace(document.FileName))
+	return strings.HasSuffix(name, ".jpg") ||
+		strings.HasSuffix(name, ".jpeg") ||
+		strings.HasSuffix(name, ".png") ||
+		strings.HasSuffix(name, ".webp")
 }
 
 func (a *App) handleCustomQuestionMessage(ctx context.Context, msg *telegram.Message) (bool, error) {

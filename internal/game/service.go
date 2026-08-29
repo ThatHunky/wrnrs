@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"wrnrs/internal/content"
@@ -120,7 +121,7 @@ func (s *Service) Start(ctx context.Context, userID int64) (StartResult, error) 
 		}
 	}
 	if current != nil {
-		card, _ := s.cardByID(current.QuestionID)
+		card, _ := s.cardForSession(*current)
 		kind := StartPendingInvite
 		if current.Status == storage.GameSessionActive {
 			kind = StartActiveSession
@@ -144,7 +145,7 @@ func (s *Service) Accept(ctx context.Context, userID, sessionID int64) (StartedR
 	}
 	if session.Status != storage.GameSessionPendingAcceptance {
 		if session.Status == storage.GameSessionActive || session.Status == storage.GameSessionRevealed {
-			card, _ := s.cardByID(session.QuestionID)
+			card, _ := s.cardForSession(session)
 			return StartedResult{Pair: pair, Session: session, PartnerID: partnerID, Card: card}, nil
 		}
 		return StartedResult{}, ErrGameNotPending
@@ -162,7 +163,7 @@ func (s *Service) Accept(ctx context.Context, userID, sessionID int64) (StartedR
 	if err != nil {
 		return StartedResult{}, err
 	}
-	card, ok := s.cardByID(session.QuestionID)
+	card, ok := s.cardForSession(session)
 	if !ok {
 		return StartedResult{}, fmt.Errorf("card %s not found", session.QuestionID)
 	}
@@ -269,6 +270,10 @@ func (s *Service) createPendingSession(ctx context.Context, pair storage.Pair, i
 		PairID:          pair.ID,
 		Level:           pair.ActiveLevel,
 		QuestionID:      card.ID,
+		QuestionSource:  questionSource(card.ID),
+		QuestionTextUK:  localizedSnapshot(card, "uk"),
+		QuestionTextEN:  localizedSnapshot(card, "en"),
+		RequiresMature:  card.RequiresMatureOptIn,
 		Status:          storage.GameSessionPendingAcceptance,
 		DeckCycle:       cycle,
 		InvitedByUserID: invitedBy,
@@ -281,9 +286,6 @@ func (s *Service) createPendingSession(ctx context.Context, pair storage.Pair, i
 }
 
 func (s *Service) selectNextCard(ctx context.Context, pair storage.Pair) (content.Card, int, error) {
-	if s.deck == nil {
-		return content.Card{}, 0, ErrNoEligibleCards
-	}
 	userA18, userAMature, err := s.repo.UserMaturity(ctx, pair.UserAID)
 	if err != nil {
 		return content.Card{}, 0, err
@@ -292,10 +294,29 @@ func (s *Service) selectNextCard(ctx context.Context, pair storage.Pair) (conten
 	if err != nil {
 		return content.Card{}, 0, err
 	}
-	cards := s.deck.EligibleCards(content.Eligibility{
-		Level:                  pair.ActiveLevel,
-		BothUsersMatureOptedIn: userA18 && userAMature && userB18 && userBMature,
-	})
+	var cards []content.Card
+	if s.deck != nil {
+		cards = append(cards, s.deck.EligibleCards(content.Eligibility{
+			Level:                  pair.ActiveLevel,
+			BothUsersMatureOptedIn: userA18 && userAMature && userB18 && userBMature,
+		})...)
+	}
+	customQuestions, err := s.repo.GetPairCustomQuestions(ctx, pair.UserAID)
+	if err != nil {
+		return content.Card{}, 0, err
+	}
+	for _, custom := range customQuestions {
+		text := strings.TrimSpace(custom.QuestionText)
+		if text == "" {
+			continue
+		}
+		cards = append(cards, content.Card{
+			ID:    fmt.Sprintf("custom:%d", custom.ID),
+			Level: pair.ActiveLevel,
+			Text:  map[string]string{"uk": text, "en": text},
+			Mode:  "both_players",
+		})
+	}
 	if len(cards) == 0 {
 		return content.Card{}, 0, ErrNoEligibleCards
 	}
@@ -394,6 +415,46 @@ func (s *Service) cardByID(questionID string) (content.Card, bool) {
 		}
 	}
 	return content.Card{}, false
+}
+
+func (s *Service) cardForSession(session storage.GameSession) (content.Card, bool) {
+	if strings.TrimSpace(session.QuestionTextUK) != "" || strings.TrimSpace(session.QuestionTextEN) != "" {
+		textUK := strings.TrimSpace(session.QuestionTextUK)
+		textEN := strings.TrimSpace(session.QuestionTextEN)
+		if textUK == "" {
+			textUK = textEN
+		}
+		if textEN == "" {
+			textEN = textUK
+		}
+		return content.Card{
+			ID:                  session.QuestionID,
+			Level:               session.Level,
+			RequiresMatureOptIn: session.RequiresMature,
+			Mode:                "both_players",
+			Text:                map[string]string{"uk": textUK, "en": textEN},
+		}, true
+	}
+	return s.cardByID(session.QuestionID)
+}
+
+func localizedSnapshot(card content.Card, language string) string {
+	if text, ok := card.LocalizedText(language); ok {
+		return text
+	}
+	for _, fallback := range []string{"uk", "en"} {
+		if text, ok := card.LocalizedText(fallback); ok {
+			return text
+		}
+	}
+	return ""
+}
+
+func questionSource(questionID string) string {
+	if strings.HasPrefix(questionID, "custom:") {
+		return "custom"
+	}
+	return "stock"
 }
 
 func (s *Service) inviteExpired(session storage.GameSession) bool {

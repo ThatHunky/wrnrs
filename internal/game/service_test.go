@@ -222,6 +222,44 @@ func TestServiceAdvancesLevelAfterSixCompletedCards(t *testing.T) {
 	}
 }
 
+func TestServiceSelectsCustomQuestionAndKeepsSnapshotAfterDeletion(t *testing.T) {
+	ctx := context.Background()
+	svc, repo, _, _ := newServiceFixture(t, nil)
+	customID, err := repo.CreateCustomQuestion(ctx, 1001, "What small ritual should we protect?")
+	if err != nil {
+		t.Fatalf("CreateCustomQuestion returned error: %v", err)
+	}
+
+	pending, err := svc.Start(ctx, 1001)
+	if err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	if pending.Card.ID != "custom:1" || customID != 1 {
+		t.Fatalf("pending card = %#v, custom id = %d", pending.Card, customID)
+	}
+	if err := repo.DeleteCustomQuestion(ctx, customID, 1001); err != nil {
+		t.Fatalf("DeleteCustomQuestion returned error: %v", err)
+	}
+	started, err := svc.Accept(ctx, 2002, pending.Session.ID)
+	if err != nil {
+		t.Fatalf("Accept returned error after custom question deletion: %v", err)
+	}
+	if text, _ := started.Card.LocalizedText("en"); text != "What small ritual should we protect?" {
+		t.Fatalf("started custom card text = %q", text)
+	}
+
+	if _, err := svc.Submit(ctx, 1001, started.Session.ID, game.CompletionSkip, ""); err != nil {
+		t.Fatalf("first Submit returned error: %v", err)
+	}
+	revealed, err := svc.Submit(ctx, 2002, started.Session.ID, game.CompletionSkip, "")
+	if err != nil {
+		t.Fatalf("second Submit returned error: %v", err)
+	}
+	if !revealed.Revealed {
+		t.Fatal("custom question session did not reveal")
+	}
+}
+
 func newServiceFixture(t *testing.T, cards []content.Card) (*game.Service, *storage.Repository, *testClock, *sql.DB) {
 	t.Helper()
 	ctx := context.Background()

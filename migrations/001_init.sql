@@ -70,6 +70,10 @@ CREATE TABLE IF NOT EXISTS game_sessions (
 	pair_id INTEGER NOT NULL REFERENCES pairs(id) ON DELETE CASCADE,
 	level INTEGER NOT NULL,
 	question_id TEXT NOT NULL,
+	question_source TEXT NOT NULL DEFAULT 'stock',
+	question_text_uk TEXT NOT NULL DEFAULT '',
+	question_text_en TEXT NOT NULL DEFAULT '',
+	requires_mature_opt_in BOOLEAN NOT NULL DEFAULT 0,
 	status TEXT NOT NULL DEFAULT 'active',
 	deck_cycle INTEGER NOT NULL DEFAULT 0,
 	invited_by_user_id INTEGER,
@@ -178,7 +182,8 @@ CREATE TABLE IF NOT EXISTS custom_questions (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	creator_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
 	question_text TEXT NOT NULL,
-	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	deleted_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS custom_questions_creator_id_idx ON custom_questions(creator_id);
