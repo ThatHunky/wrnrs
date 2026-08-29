@@ -206,3 +206,87 @@ func TestFilteredTagsRequireEveryListedTag(t *testing.T) {
 		t.Fatalf("Filtered(tags starter_100+favourite) = %q, want %q", filteredIDs(got), want)
 	}
 }
+
+func TestSelectNextAvoidsSeenItemsUntilExhaustedThenStartsNextCycle(t *testing.T) {
+	items := []catalog.Item{{ID: "a"}, {ID: "b"}, {ID: "c"}}
+
+	first, cycle, exhausted, err := catalog.SelectNext(catalog.SelectionInput{
+		SeedID: 42, Bucket: "positions", Cycle: 0, Items: items,
+	})
+	if err != nil {
+		t.Fatalf("SelectNext returned error: %v", err)
+	}
+	if cycle != 0 || exhausted {
+		t.Fatalf("first draw cycle=%d exhausted=%v, want 0 and false", cycle, exhausted)
+	}
+
+	seen := map[string]bool{"a": true, "b": true, "c": true}
+	next, cycle, exhausted, err := catalog.SelectNext(catalog.SelectionInput{
+		SeedID: 42, Bucket: "positions", Cycle: 0, Items: items, Seen: seen,
+	})
+	if err != nil {
+		t.Fatalf("SelectNext after exhaustion returned error: %v", err)
+	}
+	if cycle != 1 || !exhausted {
+		t.Fatalf("exhausted draw cycle=%d exhausted=%v, want 1 and true", cycle, exhausted)
+	}
+	if next.ID == "" {
+		t.Fatal("exhausted draw returned an empty item")
+	}
+	_ = first
+}
+
+func TestSelectNextSkipsSeenItems(t *testing.T) {
+	items := []catalog.Item{{ID: "a"}, {ID: "b"}, {ID: "c"}}
+	seen := map[string]bool{"a": true, "b": true}
+
+	got, cycle, exhausted, err := catalog.SelectNext(catalog.SelectionInput{
+		SeedID: 7, Bucket: "positions", Cycle: 0, Items: items, Seen: seen,
+	})
+	if err != nil {
+		t.Fatalf("SelectNext returned error: %v", err)
+	}
+	if got.ID != "c" || cycle != 0 || exhausted {
+		t.Fatalf("SelectNext = %s cycle=%d exhausted=%v, want c 0 false", got.ID, cycle, exhausted)
+	}
+}
+
+func TestSelectNextIsDeterministicPerSeedAndBucket(t *testing.T) {
+	items := []catalog.Item{{ID: "a"}, {ID: "b"}, {ID: "c"}, {ID: "d"}}
+	in := catalog.SelectionInput{SeedID: 99, Bucket: "positions", Cycle: 3, Items: items}
+
+	first, _, _, err := catalog.SelectNext(in)
+	if err != nil {
+		t.Fatalf("SelectNext returned error: %v", err)
+	}
+	again, _, _, err := catalog.SelectNext(in)
+	if err != nil {
+		t.Fatalf("SelectNext returned error: %v", err)
+	}
+	if first.ID != again.ID {
+		t.Fatalf("same input gave %s then %s, want a stable pick", first.ID, again.ID)
+	}
+
+	otherBucket := in
+	otherBucket.Bucket = "dares"
+	changed, _, _, err := catalog.SelectNext(otherBucket)
+	if err != nil {
+		t.Fatalf("SelectNext returned error: %v", err)
+	}
+	otherSeed := in
+	otherSeed.SeedID = 100
+	changedSeed, _, _, err := catalog.SelectNext(otherSeed)
+	if err != nil {
+		t.Fatalf("SelectNext returned error: %v", err)
+	}
+	if changed.ID == first.ID && changedSeed.ID == first.ID {
+		t.Fatal("changing both bucket and seed left the pick identical; the seed is not being mixed in")
+	}
+}
+
+func TestSelectNextRejectsEmptyInput(t *testing.T) {
+	_, _, _, err := catalog.SelectNext(catalog.SelectionInput{SeedID: 1, Bucket: "positions"})
+	if err == nil {
+		t.Fatal("SelectNext on empty items succeeded, want an error")
+	}
+}
