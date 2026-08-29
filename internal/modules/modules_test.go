@@ -1,9 +1,11 @@
 package modules_test
 
 import (
+	"context"
 	"testing"
 
 	"wrnrs/internal/modules"
+	"wrnrs/internal/telegram"
 )
 
 func TestGateAllowsWhenEveryRequirementIsMet(t *testing.T) {
@@ -55,5 +57,77 @@ func TestGateIgnoresRequirementsItDoesNotDeclare(t *testing.T) {
 	ok, reason := gate.Allows(modules.UserState{Is18Plus: true})
 	if !ok || reason != "" {
 		t.Fatalf("Allows = %v, %q; want true — gate declares only 18+", ok, reason)
+	}
+}
+
+type stubHandler struct {
+	callbacks []string
+	messages  []string
+	handle    bool
+}
+
+func (s *stubHandler) HandleCallback(_ context.Context, cb *telegram.CallbackQuery) error {
+	s.callbacks = append(s.callbacks, cb.Data)
+	return nil
+}
+
+func (s *stubHandler) HandleMessage(_ context.Context, msg *telegram.Message) (bool, error) {
+	s.messages = append(s.messages, msg.Text)
+	return s.handle, nil
+}
+
+func TestRegisterRejectsInvalidModules(t *testing.T) {
+	r := modules.NewRegistry()
+
+	if err := r.Register(modules.Module{CallbackPrefix: "pos:"}); err == nil {
+		t.Fatal("Register with empty id succeeded, want an error")
+	}
+	if err := r.Register(modules.Module{ID: "positions", CallbackPrefix: "pos"}); err == nil {
+		t.Fatal("Register with a prefix missing the trailing colon succeeded, want an error")
+	}
+}
+
+func TestRegisterRejectsDuplicateIDAndCollidingPrefix(t *testing.T) {
+	r := modules.NewRegistry()
+	if err := r.Register(modules.Module{ID: "positions", CallbackPrefix: "pos:"}); err != nil {
+		t.Fatalf("first Register returned error: %v", err)
+	}
+
+	if err := r.Register(modules.Module{ID: "positions", CallbackPrefix: "other:"}); err == nil {
+		t.Fatal("Register with a duplicate id succeeded, want an error")
+	}
+	if err := r.Register(modules.Module{ID: "favourites", CallbackPrefix: "pos:fav:"}); err == nil {
+		t.Fatal("Register with a colliding prefix succeeded, want an error")
+	}
+}
+
+func TestByCallbackMatchesRegisteredPrefix(t *testing.T) {
+	r := modules.NewRegistry()
+	handler := &stubHandler{}
+	if err := r.Register(modules.Module{ID: "positions", CallbackPrefix: "pos:", Handler: handler}); err != nil {
+		t.Fatalf("Register returned error: %v", err)
+	}
+
+	found, ok := r.ByCallback("pos:browse:12")
+	if !ok || found.ID != "positions" {
+		t.Fatalf("ByCallback(pos:browse:12) = %+v, %v; want the positions module", found, ok)
+	}
+	if _, ok := r.ByCallback("menu:main"); ok {
+		t.Fatal("ByCallback(menu:main) matched a module, want no match")
+	}
+}
+
+func TestAllReturnsACopy(t *testing.T) {
+	r := modules.NewRegistry()
+	if err := r.Register(modules.Module{ID: "positions", CallbackPrefix: "pos:"}); err != nil {
+		t.Fatalf("Register returned error: %v", err)
+	}
+
+	all := r.All()
+	all[0].ID = "mutated"
+
+	again := r.All()
+	if again[0].ID != "positions" {
+		t.Fatalf("All() leaked its backing array: id is now %q", again[0].ID)
 	}
 }
