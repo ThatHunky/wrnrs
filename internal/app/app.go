@@ -19,6 +19,7 @@ import (
 	"wrnrs/internal/content"
 	"wrnrs/internal/game"
 	"wrnrs/internal/i18n"
+	"wrnrs/internal/modules"
 	"wrnrs/internal/onboarding"
 	"wrnrs/internal/pairing"
 	"wrnrs/internal/payments"
@@ -85,6 +86,7 @@ type App struct {
 	gameService *game.Service
 	admin       *admin.Service
 	payments    payments.Catalog
+	registry    *modules.Registry
 	logger      *slog.Logger
 }
 
@@ -100,6 +102,7 @@ type Options struct {
 	Backgrounds *content.BackgroundCatalog
 	Fonts       *content.FontCatalog
 	ObjectStore ObjectStore
+	Registry    *modules.Registry
 	Logger      *slog.Logger
 }
 
@@ -119,6 +122,10 @@ func New(options Options) *App {
 			})
 		}
 	}
+	registry := options.Registry
+	if registry == nil {
+		registry = modules.NewRegistry()
+	}
 	return &App{
 		cfg:         options.Config,
 		bot:         options.Bot,
@@ -136,6 +143,7 @@ func New(options Options) *App {
 		gameService: gameService,
 		admin:       admin.NewService(options.Config.AdminTelegramIDs),
 		payments:    payments.DefaultCatalog(),
+		registry:    registry,
 		logger:      logger,
 	}
 }
