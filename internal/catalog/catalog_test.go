@@ -89,21 +89,21 @@ func testFilterCatalog() catalog.Catalog {
 		Version: 1,
 		Items: []catalog.Item{
 			{
+				ID:     "3",
+				Facets: map[string][]string{"level": {"easy"}, "location": {"shower"}},
+				Tags:   []string{"starter_100"},
+				Text:   map[string]catalog.ItemText{"uk": {Title: "третя"}},
+			},
+			{
 				ID:     "1",
 				Facets: map[string][]string{"level": {"easy"}, "location": {"bed"}},
-				Tags:   []string{"starter_100"},
+				Tags:   []string{"starter_100", "favourite"},
 				Text:   map[string]catalog.ItemText{"uk": {Title: "перша"}},
 			},
 			{
 				ID:     "2",
 				Facets: map[string][]string{"level": {"hard"}, "location": {"bed", "sofa"}},
 				Text:   map[string]catalog.ItemText{"uk": {Title: "друга"}},
-			},
-			{
-				ID:     "3",
-				Facets: map[string][]string{"level": {"easy"}, "location": {"shower"}},
-				Tags:   []string{"starter_100"},
-				Text:   map[string]catalog.ItemText{"uk": {Title: "третя"}},
 			},
 		},
 	}
@@ -195,5 +195,14 @@ func TestLoadDecodesFacetsTagsAndMedia(t *testing.T) {
 	}
 	if item.Media == nil || item.Media.Key != "positions/42.jpg" {
 		t.Fatalf("Media = %+v, want key positions/42.jpg", item.Media)
+	}
+}
+
+func TestFilteredTagsRequireEveryListedTag(t *testing.T) {
+	c := testFilterCatalog()
+
+	got := c.Filtered(catalog.Filter{Tags: []string{"starter_100", "favourite"}})
+	if want := "1"; filteredIDs(got) != want {
+		t.Fatalf("Filtered(tags starter_100+favourite) = %q, want %q", filteredIDs(got), want)
 	}
 }
