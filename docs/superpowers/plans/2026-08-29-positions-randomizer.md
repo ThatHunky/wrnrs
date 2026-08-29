@@ -22,6 +22,7 @@
 - Інжест ходить до джерела не частіше **1 запиту в секунду**.
 - Telegram: не більше **1 повідомлення в секунду** в межах одного чату.
 - Залежність цього плану: `docs/superpowers/plans/2026-08-29-modules-framework.md` має бути виконаний повністю.
+- **ID позиції — рядок, доповнений нулями до трьох знаків** (`003`, `067`, `519`). `catalog.Filtered` сортує лексикографічно за `ID`, тому неподовжені числа дали б порядок `1, 10, 100, 101, …, 11, 110`, і гортання каталогу пішло б навскіс. Те саме стосується ключів обʼєктів у MinIO, щоб імена файлів сортувались так само, як каталог.
 - Спек: `docs/superpowers/specs/2026-08-29-couples-superapp-positions-design.md`, розділ 5.
 
 ---
@@ -673,11 +674,11 @@ func TestObjectKeyUsesTheSourceExtension(t *testing.T) {
 	if got := objectKey(519, "https://example.test/uploads/18_55.png"); got != "positions/519.png" {
 		t.Fatalf("objectKey = %q, want positions/519.png", got)
 	}
-	if got := objectKey(7, "https://example.test/uploads/a.jpg?v=2"); got != "positions/7.jpg" {
-		t.Fatalf("objectKey with query = %q, want positions/7.jpg", got)
+	if got := objectKey(7, "https://example.test/uploads/a.jpg?v=2"); got != "positions/007.jpg" {
+		t.Fatalf("objectKey with query = %q, want positions/007.jpg (zero-padded)", got)
 	}
-	if got := objectKey(9, "https://example.test/uploads/noext"); got != "positions/9.png" {
-		t.Fatalf("objectKey without extension = %q, want the png default", got)
+	if got := objectKey(9, "https://example.test/uploads/noext"); got != "positions/009.png" {
+		t.Fatalf("objectKey without extension = %q, want the zero-padded png default", got)
 	}
 }
 ```
@@ -846,7 +847,7 @@ func main() {
 func buildItem(page positions.ParsedPage, tax *positions.Taxonomy) (catalog.Item, []string, error) {
 	facets, unknown := tax.Facets(page.TagSlugs)
 	item := catalog.Item{
-		ID:     strconv.Itoa(page.Number),
+		ID:     fmt.Sprintf("%03d", page.Number),
 		Facets: facets,
 		Text: map[string]catalog.ItemText{
 			"en": {Title: page.Name, Body: page.Description},
@@ -861,7 +862,7 @@ func objectKey(number int, imageURL string) string {
 	if ext == "" {
 		ext = ".png"
 	}
-	return fmt.Sprintf("positions/%d%s", number, ext)
+	return fmt.Sprintf("positions/%03d%s", number, ext)
 }
 
 func fetch(client *http.Client, url string) ([]byte, int, error) {
@@ -1287,10 +1288,10 @@ func TestMarkKindsAreIndependent(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	if _, err := repo.TogglePositionMark(ctx, pairID, "7", storage.MarkTried, 1001, now); err != nil {
+	if _, err := repo.TogglePositionMark(ctx, pairID, "007", storage.MarkTried, 1001, now); err != nil {
 		t.Fatalf("toggle tried: %v", err)
 	}
-	if _, err := repo.TogglePositionMark(ctx, pairID, "7", storage.MarkFavorited, 1001, now); err != nil {
+	if _, err := repo.TogglePositionMark(ctx, pairID, "007", storage.MarkFavorited, 1001, now); err != nil {
 		t.Fatalf("toggle favorited: %v", err)
 	}
 
@@ -1298,7 +1299,7 @@ func TestMarkKindsAreIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PairPositionMarks: %v", err)
 	}
-	mark := marks["7"]
+	mark := marks["007"]
 	if !mark.TriedAt.Valid || !mark.FavoritedAt.Valid {
 		t.Fatalf("mark = %+v, want both tried and favorited set", mark)
 	}
@@ -1312,7 +1313,7 @@ func TestMarksAreSharedAcrossThePairNotPerUser(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	if _, err := repo.TogglePositionMark(ctx, pairID, "12", storage.MarkTried, 1001, now); err != nil {
+	if _, err := repo.TogglePositionMark(ctx, pairID, "012", storage.MarkTried, 1001, now); err != nil {
 		t.Fatalf("toggle by first partner: %v", err)
 	}
 
@@ -1320,7 +1321,7 @@ func TestMarksAreSharedAcrossThePairNotPerUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PairPositionMarks: %v", err)
 	}
-	if !marks["12"].TriedAt.Valid {
+	if !marks["012"].TriedAt.Valid {
 		t.Fatal("the second partner does not see the mark set by the first")
 	}
 }
