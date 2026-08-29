@@ -82,3 +82,118 @@ func TestItemLookup(t *testing.T) {
 		t.Fatal("Item(missing) reported ok, want not found")
 	}
 }
+
+func testFilterCatalog() catalog.Catalog {
+	return catalog.Catalog{
+		Kind:    "positions",
+		Version: 1,
+		Items: []catalog.Item{
+			{
+				ID:     "1",
+				Facets: map[string][]string{"level": {"easy"}, "location": {"bed"}},
+				Tags:   []string{"starter_100"},
+				Text:   map[string]catalog.ItemText{"uk": {Title: "перша"}},
+			},
+			{
+				ID:     "2",
+				Facets: map[string][]string{"level": {"hard"}, "location": {"bed", "sofa"}},
+				Text:   map[string]catalog.ItemText{"uk": {Title: "друга"}},
+			},
+			{
+				ID:     "3",
+				Facets: map[string][]string{"level": {"easy"}, "location": {"shower"}},
+				Tags:   []string{"starter_100"},
+				Text:   map[string]catalog.ItemText{"uk": {Title: "третя"}},
+			},
+		},
+	}
+}
+
+func filteredIDs(items []catalog.Item) string {
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	return strings.Join(ids, ",")
+}
+
+func TestFilteredWithoutCriteriaReturnsEverythingSortedByID(t *testing.T) {
+	c := testFilterCatalog()
+	if got := filteredIDs(c.Filtered(catalog.Filter{})); got != "1,2,3" {
+		t.Fatalf("Filtered(empty) = %q, want 1,2,3", got)
+	}
+}
+
+func TestFilteredOrsWithinFacetAndAndsAcrossFacets(t *testing.T) {
+	c := testFilterCatalog()
+
+	orWithin := c.Filtered(catalog.Filter{Include: map[string][]string{"location": {"sofa", "shower"}}})
+	if got := filteredIDs(orWithin); got != "2,3" {
+		t.Fatalf("Filtered(location in sofa|shower) = %q, want 2,3", got)
+	}
+
+	andAcross := c.Filtered(catalog.Filter{Include: map[string][]string{
+		"level":    {"easy"},
+		"location": {"bed"},
+	}})
+	if got := filteredIDs(andAcross); got != "1" {
+		t.Fatalf("Filtered(level=easy AND location=bed) = %q, want 1", got)
+	}
+}
+
+func TestFilteredExcludeAndTags(t *testing.T) {
+	c := testFilterCatalog()
+
+	excluded := c.Filtered(catalog.Filter{Exclude: map[string][]string{"level": {"hard"}}})
+	if got := filteredIDs(excluded); got != "1,3" {
+		t.Fatalf("Filtered(exclude level=hard) = %q, want 1,3", got)
+	}
+
+	tagged := c.Filtered(catalog.Filter{Tags: []string{"starter_100"}})
+	if got := filteredIDs(tagged); got != "1,3" {
+		t.Fatalf("Filtered(tag starter_100) = %q, want 1,3", got)
+	}
+}
+
+func TestFilteredEmptyIncludeListIsIgnored(t *testing.T) {
+	c := testFilterCatalog()
+	got := c.Filtered(catalog.Filter{Include: map[string][]string{"level": {}}})
+	if filteredIDs(got) != "1,2,3" {
+		t.Fatalf("Filtered(level in {}) = %q, want all items", filteredIDs(got))
+	}
+}
+
+func TestLoadDecodesFacetsTagsAndMedia(t *testing.T) {
+	raw := `{
+		"kind": "positions",
+		"version": 1,
+		"items": [
+			{
+				"id": "42",
+				"facets": {"level": ["easy", "medium"]},
+				"tags": ["starter_100"],
+				"text": {"uk": {"title": "назва"}},
+				"media": {"key": "positions/42.jpg", "width": 800, "height": 600}
+			}
+		]
+	}`
+
+	c, err := catalog.Load(strings.NewReader(raw))
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	item, ok := c.Item("42")
+	if !ok {
+		t.Fatal("Item(42) not found")
+	}
+	if got := item.Facets["level"]; len(got) != 2 || got[0] != "easy" || got[1] != "medium" {
+		t.Fatalf("Facets[level] = %v, want [easy medium]", got)
+	}
+	if len(item.Tags) != 1 || item.Tags[0] != "starter_100" {
+		t.Fatalf("Tags = %v, want [starter_100]", item.Tags)
+	}
+	if item.Media == nil || item.Media.Key != "positions/42.jpg" {
+		t.Fatalf("Media = %+v, want key positions/42.jpg", item.Media)
+	}
+}
