@@ -302,7 +302,7 @@ func (a *App) handleMessage(ctx context.Context, msg *telegram.Message) error {
 	if handled, err := a.handleCustomQuestionMessage(ctx, msg); handled || err != nil {
 		return err
 	}
-	if handled, err := a.dispatchModuleMessage(ctx, msg); handled {
+	if handled, err := a.dispatchModuleMessage(ctx, msg); handled || err != nil {
 		return err
 	}
 	return a.sendMainMenu(ctx, msg.Chat.ID, lang, a.i18n.Text(lang, "menu.title"))
@@ -350,7 +350,7 @@ func (a *App) handleCallback(ctx context.Context, cb *telegram.CallbackQuery) er
 	}
 	_ = a.bot.AnswerCallbackQuery(ctx, cb.ID, "")
 
-	if handled, err := a.dispatchModuleCallback(ctx, cb, chatID, lang); handled {
+	if handled, err := a.dispatchModuleCallback(ctx, cb, chatID, lang); handled || err != nil {
 		return err
 	}
 

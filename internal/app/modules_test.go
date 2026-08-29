@@ -89,12 +89,16 @@ func (h *erroringModuleHandler) HandleMessage(_ context.Context, _ *telegram.Mes
 }
 
 func registerTestModule(t *testing.T, a *App, gate modules.Gate, handler modules.Handler) {
+	registerTestModuleWithID(t, a, "demo", "demo:", gate, handler)
+}
+
+func registerTestModuleWithID(t *testing.T, a *App, id, prefix string, gate modules.Gate, handler modules.Handler) {
 	t.Helper()
 	err := a.Registry().Register(modules.Module{
-		ID:             "demo",
-		TitleKey:       "module.demo",
+		ID:             id,
+		TitleKey:       "module." + id,
 		Icon:           "🎲",
-		CallbackPrefix: "demo:",
+		CallbackPrefix: prefix,
 		Gate:           gate,
 		Handler:        handler,
 	})
@@ -176,8 +180,14 @@ func TestDispatchModuleCallbackBlocksOnGateAndDoesNotReachHandler(t *testing.T) 
 func TestDispatchModuleMessageStopsAtTheFirstConsumer(t *testing.T) {
 	a, _, _ := newTestApp(t)
 	ctx := context.Background()
-	handler := &recordingModuleHandler{consume: true}
-	registerTestModule(t, a, modules.Gate{}, handler)
+
+	// First module consumes the message
+	firstHandler := &recordingModuleHandler{consume: true}
+	registerTestModuleWithID(t, a, "first", "first:", modules.Gate{}, firstHandler)
+
+	// Second module should never see the message
+	secondHandler := &recordingModuleHandler{consume: false}
+	registerTestModuleWithID(t, a, "second", "second:", modules.Gate{}, secondHandler)
 
 	const userID = int64(4104)
 	if err := a.repo.UpsertUser(ctx, storage.User{TelegramID: userID, DisplayName: "Тест", Language: "uk"}); err != nil {
@@ -197,8 +207,11 @@ func TestDispatchModuleMessageStopsAtTheFirstConsumer(t *testing.T) {
 	if !handled {
 		t.Fatal("dispatchModuleMessage reported not handled, want handled")
 	}
-	if len(handler.messages) != 1 {
-		t.Fatalf("handler messages = %v, want one entry", handler.messages)
+	if len(firstHandler.messages) != 1 {
+		t.Fatalf("first handler messages = %v, want one entry", firstHandler.messages)
+	}
+	if len(secondHandler.messages) != 0 {
+		t.Fatalf("second handler messages = %v, want nothing (dispatch should have stopped)", secondHandler.messages)
 	}
 }
 
