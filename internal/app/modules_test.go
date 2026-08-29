@@ -2,9 +2,12 @@ package app
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"wrnrs/internal/modules"
 	"wrnrs/internal/storage"
+	"wrnrs/internal/telegram"
 )
 
 func TestModuleUserStateReflectsMaturityPairAndPremium(t *testing.T) {
@@ -48,5 +51,200 @@ func TestModuleUserStateReflectsMaturityPairAndPremium(t *testing.T) {
 	}
 	if state.HasActivePair {
 		t.Fatalf("state.HasActivePair = true, want false — no pair was created")
+	}
+}
+
+// errModuleHandlerFailed lets tests prove that a handler error propagates
+// instead of being swallowed by the dispatch loop.
+var errModuleHandlerFailed = errors.New("module handler failed")
+
+type recordingModuleHandler struct {
+	callbacks []string
+	messages  []string
+	consume   bool
+}
+
+func (h *recordingModuleHandler) HandleCallback(_ context.Context, cb *telegram.CallbackQuery) error {
+	h.callbacks = append(h.callbacks, cb.Data)
+	return nil
+}
+
+func (h *recordingModuleHandler) HandleMessage(_ context.Context, msg *telegram.Message) (bool, error) {
+	h.messages = append(h.messages, msg.Text)
+	return h.consume, nil
+}
+
+// erroringModuleHandler always fails, so tests can check that dispatch stops
+// and reports the update as handled instead of falling through silently.
+type erroringModuleHandler struct {
+	err error
+}
+
+func (h *erroringModuleHandler) HandleCallback(_ context.Context, _ *telegram.CallbackQuery) error {
+	return h.err
+}
+
+func (h *erroringModuleHandler) HandleMessage(_ context.Context, _ *telegram.Message) (bool, error) {
+	return false, h.err
+}
+
+func registerTestModule(t *testing.T, a *App, gate modules.Gate, handler modules.Handler) {
+	t.Helper()
+	err := a.Registry().Register(modules.Module{
+		ID:             "demo",
+		TitleKey:       "module.demo",
+		Icon:           "🎲",
+		CallbackPrefix: "demo:",
+		Gate:           gate,
+		Handler:        handler,
+	})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+}
+
+func TestDispatchModuleCallbackRoutesMatchingPrefix(t *testing.T) {
+	a, _, _ := newTestApp(t)
+	ctx := context.Background()
+	handler := &recordingModuleHandler{}
+	registerTestModule(t, a, modules.Gate{}, handler)
+
+	const userID = int64(4101)
+	if err := a.repo.UpsertUser(ctx, storage.User{TelegramID: userID, DisplayName: "Тест", Language: "uk"}); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	cb := &telegram.CallbackQuery{ID: "1", Data: "demo:open", From: telegram.User{ID: userID}}
+	handled, err := a.dispatchModuleCallback(ctx, cb, userID, "uk")
+	if err != nil {
+		t.Fatalf("dispatchModuleCallback: %v", err)
+	}
+	if !handled {
+		t.Fatal("dispatchModuleCallback reported not handled, want handled")
+	}
+	if len(handler.callbacks) != 1 || handler.callbacks[0] != "demo:open" {
+		t.Fatalf("handler callbacks = %v, want [demo:open]", handler.callbacks)
+	}
+}
+
+func TestDispatchModuleCallbackIgnoresUnknownPrefix(t *testing.T) {
+	a, _, _ := newTestApp(t)
+	ctx := context.Background()
+	handler := &recordingModuleHandler{}
+	registerTestModule(t, a, modules.Gate{}, handler)
+
+	cb := &telegram.CallbackQuery{ID: "1", Data: "menu:main", From: telegram.User{ID: 4102}}
+	handled, err := a.dispatchModuleCallback(ctx, cb, 4102, "uk")
+	if err != nil {
+		t.Fatalf("dispatchModuleCallback: %v", err)
+	}
+	if handled {
+		t.Fatal("dispatchModuleCallback handled menu:main, want it left to the existing switch")
+	}
+	if len(handler.callbacks) != 0 {
+		t.Fatalf("handler saw %v, want nothing", handler.callbacks)
+	}
+}
+
+func TestDispatchModuleCallbackBlocksOnGateAndDoesNotReachHandler(t *testing.T) {
+	a, bot, _ := newTestApp(t)
+	ctx := context.Background()
+	handler := &recordingModuleHandler{}
+	registerTestModule(t, a, modules.Gate{Needs18Plus: true}, handler)
+
+	const userID = int64(4103)
+	if err := a.repo.UpsertUser(ctx, storage.User{TelegramID: userID, DisplayName: "Тест", Language: "uk"}); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	cb := &telegram.CallbackQuery{ID: "1", Data: "demo:open", From: telegram.User{ID: userID}}
+	handled, err := a.dispatchModuleCallback(ctx, cb, userID, "uk")
+	if err != nil {
+		t.Fatalf("dispatchModuleCallback: %v", err)
+	}
+	if !handled {
+		t.Fatal("a gate-blocked callback reported not handled; it must not fall through to the main switch")
+	}
+	if len(handler.callbacks) != 0 {
+		t.Fatalf("blocked callback still reached the handler: %v", handler.callbacks)
+	}
+	if len(bot.messages) == 0 && len(bot.edits) == 0 {
+		t.Fatal("gate block sent nothing to the user")
+	}
+}
+
+func TestDispatchModuleMessageStopsAtTheFirstConsumer(t *testing.T) {
+	a, _, _ := newTestApp(t)
+	ctx := context.Background()
+	handler := &recordingModuleHandler{consume: true}
+	registerTestModule(t, a, modules.Gate{}, handler)
+
+	const userID = int64(4104)
+	if err := a.repo.UpsertUser(ctx, storage.User{TelegramID: userID, DisplayName: "Тест", Language: "uk"}); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	msg := &telegram.Message{
+		MessageID: 1,
+		Text:      "привіт",
+		From:      &telegram.User{ID: userID},
+		Chat:      telegram.Chat{ID: userID},
+	}
+	handled, err := a.dispatchModuleMessage(ctx, msg)
+	if err != nil {
+		t.Fatalf("dispatchModuleMessage: %v", err)
+	}
+	if !handled {
+		t.Fatal("dispatchModuleMessage reported not handled, want handled")
+	}
+	if len(handler.messages) != 1 {
+		t.Fatalf("handler messages = %v, want one entry", handler.messages)
+	}
+}
+
+func TestDispatchModuleMessageReportsHandledWhenHandlerErrors(t *testing.T) {
+	a, _, _ := newTestApp(t)
+	ctx := context.Background()
+	handler := &erroringModuleHandler{err: errModuleHandlerFailed}
+	registerTestModule(t, a, modules.Gate{}, handler)
+
+	const userID = int64(4105)
+	if err := a.repo.UpsertUser(ctx, storage.User{TelegramID: userID, DisplayName: "Тест", Language: "uk"}); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	msg := &telegram.Message{
+		MessageID: 1,
+		Text:      "привіт",
+		From:      &telegram.User{ID: userID},
+		Chat:      telegram.Chat{ID: userID},
+	}
+	handled, err := a.dispatchModuleMessage(ctx, msg)
+	if !errors.Is(err, errModuleHandlerFailed) {
+		t.Fatalf("dispatchModuleMessage error = %v, want %v", err, errModuleHandlerFailed)
+	}
+	if !handled {
+		t.Fatal("dispatchModuleMessage reported not handled after a handler error; the caller would fall through to sendMainMenu and silently drop the user's message")
+	}
+}
+
+func TestDispatchModuleCallbackPropagatesHandlerError(t *testing.T) {
+	a, _, _ := newTestApp(t)
+	ctx := context.Background()
+	handler := &erroringModuleHandler{err: errModuleHandlerFailed}
+	registerTestModule(t, a, modules.Gate{}, handler)
+
+	const userID = int64(4106)
+	if err := a.repo.UpsertUser(ctx, storage.User{TelegramID: userID, DisplayName: "Тест", Language: "uk"}); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	cb := &telegram.CallbackQuery{ID: "1", Data: "demo:open", From: telegram.User{ID: userID}}
+	handled, err := a.dispatchModuleCallback(ctx, cb, userID, "uk")
+	if !errors.Is(err, errModuleHandlerFailed) {
+		t.Fatalf("dispatchModuleCallback error = %v, want %v", err, errModuleHandlerFailed)
+	}
+	if !handled {
+		t.Fatal("dispatchModuleCallback reported not handled after a handler error; caller would fall through to the legacy switch on an already-claimed prefix")
 	}
 }
