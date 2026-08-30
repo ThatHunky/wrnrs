@@ -27,14 +27,23 @@ func testBundle() *i18n.Bundle {
 	return b
 }
 
+// testCard's title is a marker no part of its body contains, so a test can
+// assert the caption does NOT render it (see
+// TestCardCaptionShowsActorTypeAndBody).
 func testCard() catalog.Item {
 	return catalog.Item{
 		ID:     "p007",
 		Facets: map[string][]string{"kind": {"dare"}, "intensity": {"gentle"}},
-		Text:   map[string]catalog.ItemText{"uk": {Title: "Обійми", Body: "Обійми партнера і не відпускай хвилину."}},
+		Text:   map[string]catalog.ItemText{"uk": {Title: "ЗАГОЛОВОК-МАРКЕР", Body: "Обійми партнера і не відпускай хвилину."}},
 	}
 }
 
+// TestCardCaptionShowsActorTypeAndBody pins the caption's whole content:
+// actor, kind/intensity header, body — and nothing else. In particular the
+// card's `title` must not appear. Spec §8 makes `title` a short label for
+// logs and filters, not a heading, and rendering it spoiled cards whose
+// whole point was the reveal (p071's «Тільки зубами» sat directly above
+// «Зніми з мене сорочку, використовуючи тільки зуби.»).
 func TestCardCaptionShowsActorTypeAndBody(t *testing.T) {
 	caption := play.CardCaption(testBundle(), "uk", testCard(), "Оля")
 
@@ -46,6 +55,9 @@ func TestCardCaptionShowsActorTypeAndBody(t *testing.T) {
 	}
 	if !strings.Contains(caption, "Дія") {
 		t.Fatalf("caption %q does not say whether this is a truth or a dare", caption)
+	}
+	if strings.Contains(caption, "ЗАГОЛОВОК-МАРКЕР") {
+		t.Fatalf("caption %q renders the card title; spec §8 keeps title out of the card", caption)
 	}
 }
 

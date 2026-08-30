@@ -17,24 +17,26 @@ import (
 var kindValues = []string{"truth", "dare"}
 var intensityValues = []string{"gentle", "medium", "bold"}
 
-// itemTitleAndBody resolves the localized title/body for an item, falling
-// back to English and then to whatever language IS present, mirroring
-// internal/positions and internal/wishlist's itemTitleAndBody: a caption
-// should never come up empty just because neither preferred language has a
-// translation yet.
-func itemTitleAndBody(language string, item catalog.Item) (string, string) {
-	if text, ok := item.Text[language]; ok && strings.TrimSpace(text.Title) != "" {
-		return text.Title, text.Body
+// itemBody resolves the localized body for an item, falling back to English
+// and then to whatever language IS present, mirroring internal/positions and
+// internal/wishlist's itemTitleAndBody: a caption should never come up empty
+// just because neither preferred language has a translation yet. Unlike
+// those two, play returns the body alone — the card's `title` is a short
+// label for logs and filters and is never rendered (see spec §8), so
+// resolving it here would only produce a value with no consumer.
+func itemBody(language string, item catalog.Item) string {
+	if text, ok := item.Text[language]; ok && strings.TrimSpace(text.Body) != "" {
+		return text.Body
 	}
-	if text, ok := item.Text["en"]; ok && strings.TrimSpace(text.Title) != "" {
-		return text.Title, text.Body
+	if text, ok := item.Text["en"]; ok && strings.TrimSpace(text.Body) != "" {
+		return text.Body
 	}
 	for _, text := range item.Text {
-		if strings.TrimSpace(text.Title) != "" {
-			return text.Title, text.Body
+		if strings.TrimSpace(text.Body) != "" {
+			return text.Body
 		}
 	}
-	return "", ""
+	return ""
 }
 
 // facetLabel resolves one facet value's display label from the
@@ -73,14 +75,20 @@ func firstFacetValue(item catalog.Item, facet string) string {
 }
 
 // CardCaption renders one drawn card: who it is for (when actorName is
-// known), what kind of card it is and how intense, then the card's own
-// title and body. actorName is empty until the app has a paired partner to
-// name (see play.hub.solo_hint) or before the handler has resolved whose
-// turn it is; in that case the actor prefix and its trailing ":" are both
-// omitted rather than left as an orphaned separator like "Обійми партнера і
-// не відпускай хвилину." starting with a stray ": ".
+// known), what kind of card it is and how intense, then the card's body.
+// The card's `title` is deliberately NOT rendered — spec §8: «`title` не
+// використовується як заголовок картки — картка показує `body`… слугує
+// коротким ярликом у логах і фільтрах». Printing it was redundant at best
+// and spoiled the card at worst (p071 rendered «Тільки зубами» directly
+// above the line that was supposed to reveal it).
+//
+// actorName is empty until the app has a paired partner to name (see
+// play.hub.solo_hint) or before the handler has resolved whose turn it is;
+// in that case the actor prefix and its trailing ":" are both omitted
+// rather than left as an orphaned separator like "Обійми партнера і не
+// відпускай хвилину." starting with a stray ": ".
 func CardCaption(bundle *i18n.Bundle, language string, item catalog.Item, actorName string) string {
-	title, body := itemTitleAndBody(language, item)
+	body := itemBody(language, item)
 
 	kindLabel := facetLabel(bundle, language, "kind", firstFacetValue(item, "kind"))
 	intensityLabel := facetLabel(bundle, language, "intensity", firstFacetValue(item, "intensity"))
@@ -104,9 +112,6 @@ func CardCaption(bundle *i18n.Bundle, language string, item catalog.Item, actorN
 	var lines []string
 	if header != "" {
 		lines = append(lines, header)
-	}
-	if title != "" {
-		lines = append(lines, title)
 	}
 	if strings.TrimSpace(body) != "" {
 		lines = append(lines, body)
