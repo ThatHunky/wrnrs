@@ -60,6 +60,16 @@ type Repository interface {
 	PairPositionMarks(ctx context.Context, pairID int64) (map[string]storage.PositionMark, error)
 	TogglePositionMark(ctx context.Context, pairID int64, positionID string, kind storage.PositionMarkKind, markedBy int64, now time.Time) (bool, error)
 	UserLanguage(ctx context.Context, telegramID int64) (string, error)
+	// SetWishAnswer, UserWishAnswers and PairWishMatches are the exact three
+	// storage.Repository methods this module needs to power the wish button
+	// (personal, item_kind='position') and the matches-only filter (pair
+	// matches, computed entirely inside internal/storage so no individual
+	// answer — in particular no "no" — ever reaches this package). This
+	// module never imports internal/wishlist; both modules reach the same
+	// wish_answers table exclusively through internal/storage.
+	SetWishAnswer(ctx context.Context, userID int64, kind storage.WishItemKind, itemID string, answer storage.WishAnswer, now time.Time) error
+	UserWishAnswers(ctx context.Context, userID int64) (map[string]storage.WishAnswer, error)
+	PairWishMatches(ctx context.Context, pairID int64) ([]storage.WishMatch, error)
 }
 
 const (
@@ -280,6 +290,10 @@ func (h *Handler) HandleCallback(ctx context.Context, cb *telegram.CallbackQuery
 		return h.showRandom(ctx, cb, chatID, userID, language)
 	case strings.HasPrefix(data, "pos:mark:"):
 		return h.handleMark(ctx, cb, chatID, userID, language, strings.TrimPrefix(data, "pos:mark:"))
+	case strings.HasPrefix(data, "pos:wish:"):
+		return h.handleWish(ctx, cb, chatID, userID, language, strings.TrimPrefix(data, "pos:wish:"))
+	case data == "pos:matches:toggle":
+		return h.handleMatchesToggle(ctx, cb, chatID, userID, language)
 	case data == "pos:filters":
 		return h.showFilters(ctx, cb, chatID, userID, language)
 	case strings.HasPrefix(data, "pos:filter:"):
@@ -381,10 +395,56 @@ func seedFor(pair *storage.Pair, userID int64) int64 {
 	return userID
 }
 
-// visibleItems applies the stored filter and hides anything the pair has
-// buried.
-func (h *Handler) visibleItems(state BrowseState, marks map[string]storage.PositionMark) []catalog.Item {
-	return h.service.VisibleWithMarks(state.Filter, marks)
+// visibleItems applies the stored filter, hides anything the pair has
+// buried, and — when state.MatchesOnly is set — narrows further to
+// positions the pair has matched on in the Wishlist module. That third step
+// runs strictly after VisibleWithMarks (mirroring how hiding already runs
+// after Filtered()), via Service.FilterToMatches: matches live in the
+// database and depend on the pair, so they can never be expressed as a
+// catalog.Filter facet.
+//
+// A MatchesOnly state with no active pair narrows to nothing rather than
+// erroring — the toggle itself is always presented locked without a pair
+// (see FiltersKeyboardWithMatches), so reaching this branch at all can only
+// mean a stale/forged callback replaying a MatchesOnly=true state saved from
+// back when the caller still had one.
+func (h *Handler) visibleItems(ctx context.Context, state BrowseState, marks map[string]storage.PositionMark, pair *storage.Pair) ([]catalog.Item, error) {
+	items := h.service.VisibleWithMarks(state.Filter, marks)
+	if !state.MatchesOnly {
+		return items, nil
+	}
+	if pair == nil {
+		return nil, nil
+	}
+	matches, err := h.repo.PairWishMatches(ctx, pair.ID)
+	if err != nil {
+		return nil, err
+	}
+	matchIDs := make(map[string]bool, len(matches))
+	for _, m := range matches {
+		if m.ItemKind == storage.WishKindPosition {
+			matchIDs[m.ItemID] = true
+		}
+	}
+	return h.service.FilterToMatches(items, matchIDs), nil
+}
+
+// emptyText picks the "nothing to show" copy: the matches-only-specific
+// explanation when that filter is why the selection is empty (a bare "no
+// results" here would be a dead end — nothing on screen would tell the
+// viewer the filter itself is the reason, or how to escape it), and the
+// generic facet-filter copy otherwise.
+func (h *Handler) emptyText(language string, state BrowseState) string {
+	if state.MatchesOnly {
+		return h.i18n.Text(language, "positions.empty_matches")
+	}
+	return h.i18n.Text(language, "positions.empty")
+}
+
+// wishKey composes the "kind:itemID" key storage.UserWishAnswers uses,
+// scoped to this module's own item kind.
+func wishKey(itemID string) string {
+	return string(storage.WishKindPosition) + ":" + itemID
 }
 
 // --- screens -----------------------------------------------------------------
@@ -400,20 +460,28 @@ func (h *Handler) showBrowse(ctx context.Context, cb *telegram.CallbackQuery, ch
 		return err
 	}
 	state := h.loadState(ctx, userID)
-	items := h.visibleItems(state, marks)
+	items, err := h.visibleItems(ctx, state, marks, pair)
+	if err != nil {
+		return err
+	}
 	if len(items) == 0 {
-		return h.presentText(ctx, cb, chatID, h.i18n.Text(language, "positions.empty"), HubKeyboard(language))
+		return h.presentText(ctx, cb, chatID, h.emptyText(language, state), HubKeyboard(language))
 	}
 
 	item, normalized, ok := h.service.At(items, index)
 	if !ok {
-		return h.presentText(ctx, cb, chatID, h.i18n.Text(language, "positions.empty"), HubKeyboard(language))
+		return h.presentText(ctx, cb, chatID, h.emptyText(language, state), HubKeyboard(language))
 	}
 
 	state.Index = normalized
 	h.saveState(ctx, userID, state)
 
-	return h.showItem(ctx, cb, chatID, language, item, normalized, len(items), marks, pair == nil)
+	wishAnswers, err := h.repo.UserWishAnswers(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	return h.showItem(ctx, cb, chatID, language, item, normalized, len(items), marks, wishAnswers, pair == nil)
 }
 
 func (h *Handler) showRandom(ctx context.Context, cb *telegram.CallbackQuery, chatID, userID int64, language string) error {
@@ -422,14 +490,17 @@ func (h *Handler) showRandom(ctx context.Context, cb *telegram.CallbackQuery, ch
 		return err
 	}
 	state := h.loadState(ctx, userID)
-	items := h.visibleItems(state, marks)
+	items, err := h.visibleItems(ctx, state, marks, pair)
+	if err != nil {
+		return err
+	}
 	if len(items) == 0 {
-		return h.presentText(ctx, cb, chatID, h.i18n.Text(language, "positions.empty"), HubKeyboard(language))
+		return h.presentText(ctx, cb, chatID, h.emptyText(language, state), HubKeyboard(language))
 	}
 
 	item, nextCycle, err := h.service.Random(seedFor(pair, userID), items, marks, state.Cycle, state.Draw)
 	if err != nil {
-		return h.presentText(ctx, cb, chatID, h.i18n.Text(language, "positions.empty"), HubKeyboard(language))
+		return h.presentText(ctx, cb, chatID, h.emptyText(language, state), HubKeyboard(language))
 	}
 
 	index := indexOf(items, item.ID)
@@ -443,7 +514,12 @@ func (h *Handler) showRandom(ctx context.Context, cb *telegram.CallbackQuery, ch
 	state.Draw++
 	h.saveState(ctx, userID, state)
 
-	return h.showItem(ctx, cb, chatID, language, item, index, len(items), marks, pair == nil)
+	wishAnswers, err := h.repo.UserWishAnswers(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	return h.showItem(ctx, cb, chatID, language, item, index, len(items), marks, wishAnswers, pair == nil)
 }
 
 func indexOf(items []catalog.Item, id string) int {
@@ -472,10 +548,14 @@ func indexOfOK(items []catalog.Item, id string) (int, bool) {
 // is whether the viewer currently has no active pair — it drives the lock
 // marker on the (still visible) mark buttons, since marks==nil is not a
 // reliable signal: a solo user's marks map is a valid, non-nil empty map.
-func (h *Handler) showItem(ctx context.Context, cb *telegram.CallbackQuery, chatID int64, language string, item catalog.Item, index, total int, marks map[string]storage.PositionMark, solo bool) error {
+// wishAnswers is the caller's own wish answers (never the partner's — see
+// storage.UserWishAnswers), used only to mark the current answer on the
+// wish row; it needs no solo lock, unlike marks, since a wish is personal.
+func (h *Handler) showItem(ctx context.Context, cb *telegram.CallbackQuery, chatID int64, language string, item catalog.Item, index, total int, marks map[string]storage.PositionMark, wishAnswers map[string]storage.WishAnswer, solo bool) error {
 	mark := marks[item.ID]
+	wish := string(wishAnswers[wishKey(item.ID)])
 	caption := BrowseCaption(language, item, index, total, mark.TriedAt.Valid, mark.FavoritedAt.Valid)
-	keyboard := BrowseKeyboard(language, item.ID, index, mark.TriedAt.Valid, mark.FavoritedAt.Valid, solo)
+	keyboard := BrowseKeyboardWithWish(language, item.ID, index, mark.TriedAt.Valid, mark.FavoritedAt.Valid, solo, wish)
 	return h.presentCard(ctx, cb, chatID, item, caption, keyboard)
 }
 
@@ -512,7 +592,10 @@ func (h *Handler) handleMark(ctx context.Context, cb *telegram.CallbackQuery, ch
 		return err
 	}
 	state := h.loadState(ctx, userID)
-	items := h.visibleItems(state, marks)
+	items, err := h.visibleItems(ctx, state, marks, pair)
+	if err != nil {
+		return err
+	}
 	index, found := indexOfOK(items, item.ID)
 	if !found {
 		// The toggle just buried the item the user was looking at (kind ==
@@ -525,7 +608,101 @@ func (h *Handler) handleMark(ctx context.Context, cb *telegram.CallbackQuery, ch
 	}
 	state.Index = index
 	h.saveState(ctx, userID, state)
-	return h.showItem(ctx, cb, chatID, language, item, index, len(items), marks, false)
+
+	wishAnswers, err := h.repo.UserWishAnswers(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	return h.showItem(ctx, cb, chatID, language, item, index, len(items), marks, wishAnswers, false)
+}
+
+// handleWish records the caller's personal wish answer for one position —
+// item_kind='position' in wish_answers, via storage.SetWishAnswer directly
+// (never through internal/wishlist, which this package does not import) —
+// and re-renders the same card with the wish row updated. Unlike
+// handleMark, this needs no active pair: a wish answer is a personal
+// stance, and works solo exactly like the wishlist module's own swipe
+// screen.
+func (h *Handler) handleWish(ctx context.Context, cb *telegram.CallbackQuery, chatID, userID int64, language, rest string) error {
+	itemID, answerRaw, ok := splitOnce(rest, ":")
+	if !ok {
+		return h.showBrowse(ctx, cb, chatID, userID, language, h.loadState(ctx, userID).Index)
+	}
+	answer, ok := parseWishAnswer(answerRaw)
+	if !ok {
+		return h.showBrowse(ctx, cb, chatID, userID, language, h.loadState(ctx, userID).Index)
+	}
+	item, ok := h.catalog.Item(itemID)
+	if !ok {
+		// Stale or forged callback for an id that no longer (or never did)
+		// exist: refresh the current screen instead of writing an answer
+		// for nothing, and never panic on it — mirrors handleMark.
+		return h.showBrowse(ctx, cb, chatID, userID, language, h.loadState(ctx, userID).Index)
+	}
+
+	if err := h.repo.SetWishAnswer(ctx, userID, storage.WishKindPosition, itemID, answer, h.now()); err != nil {
+		return err
+	}
+
+	pair, marks, err := h.pairAndMarks(ctx, userID)
+	if err != nil {
+		return err
+	}
+	state := h.loadState(ctx, userID)
+	items, err := h.visibleItems(ctx, state, marks, pair)
+	if err != nil {
+		return err
+	}
+	index, found := indexOfOK(items, item.ID)
+	if !found {
+		// Changing a wish answer while MatchesOnly is on can move the
+		// current item out of the filtered selection (e.g. switching away
+		// from "want" can drop a match), the same way hiding an item does
+		// in handleMark above.
+		return h.showBrowse(ctx, cb, chatID, userID, language, state.Index)
+	}
+	state.Index = index
+	h.saveState(ctx, userID, state)
+
+	wishAnswers, err := h.repo.UserWishAnswers(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	return h.showItem(ctx, cb, chatID, language, item, index, len(items), marks, wishAnswers, pair == nil)
+}
+
+// parseWishAnswer validates rest as one of the three wish-answer words this
+// module's callback can carry, refusing anything else the same way
+// parseMarkKind refuses an unknown mark kind.
+func parseWishAnswer(raw string) (storage.WishAnswer, bool) {
+	switch storage.WishAnswer(raw) {
+	case storage.AnswerWant, storage.AnswerCurious, storage.AnswerNo:
+		return storage.WishAnswer(raw), true
+	default:
+		return "", false
+	}
+}
+
+// handleMatchesToggle flips BrowseState.MatchesOnly and re-renders the
+// filters screen. Without an active pair the toggle is a no-op refresh —
+// FiltersKeyboardWithMatches already presents it locked in that case, so
+// reaching this handler at all without a pair can only be a stale/forged
+// callback.
+func (h *Handler) handleMatchesToggle(ctx context.Context, cb *telegram.CallbackQuery, chatID, userID int64, language string) error {
+	pair, err := h.repo.ActivePairForUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if pair == nil {
+		return h.showFilters(ctx, cb, chatID, userID, language)
+	}
+	state := h.loadState(ctx, userID)
+	state.MatchesOnly = !state.MatchesOnly
+	state.Index = 0
+	h.saveState(ctx, userID, state)
+	return h.showFilters(ctx, cb, chatID, userID, language)
 }
 
 func parseMarkKind(raw string) (storage.PositionMarkKind, bool) {
@@ -542,15 +719,19 @@ func parseMarkKind(raw string) (storage.PositionMarkKind, bool) {
 }
 
 func (h *Handler) showFilters(ctx context.Context, cb *telegram.CallbackQuery, chatID, userID int64, language string) error {
-	_, marks, err := h.pairAndMarks(ctx, userID)
+	pair, marks, err := h.pairAndMarks(ctx, userID)
 	if err != nil {
 		return err
 	}
 	state := h.loadState(ctx, userID)
-	total := len(h.visibleItems(state, marks))
+	items, err := h.visibleItems(ctx, state, marks, pair)
+	if err != nil {
+		return err
+	}
 	text := h.i18n.Text(language, "positions.filters")
-	text = sprintfSafe(text, total)
-	return h.presentText(ctx, cb, chatID, text, FiltersKeyboard(language, state.Filter, h.filterFacets))
+	text = sprintfSafe(text, len(items))
+	keyboard := FiltersKeyboardWithMatches(language, state.Filter, h.filterFacets, state.MatchesOnly, pair != nil)
+	return h.presentText(ctx, cb, chatID, text, keyboard)
 }
 
 func (h *Handler) handleFilterToggle(ctx context.Context, cb *telegram.CallbackQuery, chatID, userID int64, language, rest string) error {
@@ -566,12 +747,16 @@ func (h *Handler) handleFilterToggle(ctx context.Context, cb *telegram.CallbackQ
 }
 
 func (h *Handler) showDumpConfirm(ctx context.Context, cb *telegram.CallbackQuery, chatID, userID int64, language string) error {
-	_, marks, err := h.pairAndMarks(ctx, userID)
+	pair, marks, err := h.pairAndMarks(ctx, userID)
 	if err != nil {
 		return err
 	}
 	state := h.loadState(ctx, userID)
-	total := len(h.visibleItems(state, marks))
+	items, err := h.visibleItems(ctx, state, marks, pair)
+	if err != nil {
+		return err
+	}
+	total := len(items)
 	minutes := int(time.Duration(total) * h.dumpInterval / time.Minute)
 	if minutes < 1 && total > 0 {
 		minutes = 1
@@ -581,14 +766,17 @@ func (h *Handler) showDumpConfirm(ctx context.Context, cb *telegram.CallbackQuer
 }
 
 func (h *Handler) startDump(ctx context.Context, cb *telegram.CallbackQuery, chatID, userID int64, language string) error {
-	_, marks, err := h.pairAndMarks(ctx, userID)
+	pair, marks, err := h.pairAndMarks(ctx, userID)
 	if err != nil {
 		return err
 	}
 	state := h.loadState(ctx, userID)
-	items := h.visibleItems(state, marks)
+	items, err := h.visibleItems(ctx, state, marks, pair)
+	if err != nil {
+		return err
+	}
 	if len(items) == 0 {
-		return h.presentText(ctx, cb, chatID, h.i18n.Text(language, "positions.empty"), HubKeyboard(language))
+		return h.presentText(ctx, cb, chatID, h.emptyText(language, state), HubKeyboard(language))
 	}
 
 	// Acquire a global concurrency slot before disturbing anything. If the

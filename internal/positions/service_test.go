@@ -78,6 +78,58 @@ func TestEncodeDecodeStateRoundTripsExcludeAndTags(t *testing.T) {
 	}
 }
 
+// TestEncodeDecodeStateRoundTripsMatchesOnly guards MatchesOnly (json tag
+// "m") through the same Redis-bound JSON round trip as Filter, Index and
+// Cycle: it lives beside the filter in BrowseState, not inside it, but it
+// still has to survive being written and read back exactly like every other
+// field.
+func TestEncodeDecodeStateRoundTripsMatchesOnly(t *testing.T) {
+	state := positions.BrowseState{
+		Filter:      catalog.Filter{Include: map[string][]string{"level": {"easy"}}},
+		MatchesOnly: true,
+		Index:       2,
+		Cycle:       1,
+	}
+
+	encoded, err := positions.EncodeState(state)
+	if err != nil {
+		t.Fatalf("EncodeState: %v", err)
+	}
+	back, err := positions.DecodeState(encoded)
+	if err != nil {
+		t.Fatalf("DecodeState: %v", err)
+	}
+	if !back.MatchesOnly {
+		t.Fatalf("decoded MatchesOnly = false, want true")
+	}
+	if len(back.Filter.Include["level"]) != 1 || back.Filter.Include["level"][0] != "easy" {
+		t.Fatalf("decoded filter = %+v, want level=easy alongside MatchesOnly", back.Filter)
+	}
+	if back.Index != 2 || back.Cycle != 1 {
+		t.Fatalf("decoded index/cycle = %d/%d, want 2/1", back.Index, back.Cycle)
+	}
+}
+
+// TestEncodeDecodeStateMatchesOnlyDefaultsToFalse guards the other half:
+// a state that never set MatchesOnly must decode back to false, not to a
+// zero-value quirk that silently narrows every existing saved state to
+// matches-only once this field ships.
+func TestEncodeDecodeStateMatchesOnlyDefaultsToFalse(t *testing.T) {
+	state := positions.BrowseState{Index: 1}
+
+	encoded, err := positions.EncodeState(state)
+	if err != nil {
+		t.Fatalf("EncodeState: %v", err)
+	}
+	back, err := positions.DecodeState(encoded)
+	if err != nil {
+		t.Fatalf("DecodeState: %v", err)
+	}
+	if back.MatchesOnly {
+		t.Fatalf("decoded MatchesOnly = true, want false for a state that never set it")
+	}
+}
+
 func TestDecodeStateOnGarbageReturnsAnError(t *testing.T) {
 	if _, err := positions.DecodeState("not-json"); err == nil {
 		t.Fatal("DecodeState on garbage succeeded, want an error")
@@ -279,6 +331,58 @@ func TestRandomConsecutiveDrawsStillPreferUntried(t *testing.T) {
 		}
 		if !untried[got.ID] {
 			t.Fatalf("Random draw %d = %s, want one of the 2 untried items %v", draw, got.ID, untried)
+		}
+	}
+}
+
+// TestFilterToMatchesNarrowsToGivenIDsOnly pins FilterToMatches's contract:
+// it is a pure, DB-free narrowing step applied to an already-filtered
+// selection, keyed purely on item ID membership — it never inspects facets
+// or tags itself, so it cannot be mistaken for (or folded into)
+// catalog.Filter, which is the whole reason the brief keeps matches out of
+// Filter.Include.
+func TestFilterToMatchesNarrowsToGivenIDsOnly(t *testing.T) {
+	svc := positions.NewService(positions.ServiceOptions{Catalog: serviceCatalog()})
+	items := svc.VisibleWithMarks(catalog.Filter{}, nil)
+
+	got := svc.FilterToMatches(items, map[string]bool{"2": true})
+	if len(got) != 1 || got[0].ID != "2" {
+		t.Fatalf("FilterToMatches = %v, want only item 2", itemIDs(got))
+	}
+}
+
+// TestFilterToMatchesWithNoMatchesIsEmpty covers the zero-matches case
+// explicitly: an empty (or nil) match set must narrow to nothing, not to
+// everything — the failure mode a naive "skip filtering when unset" branch
+// would produce.
+func TestFilterToMatchesWithNoMatchesIsEmpty(t *testing.T) {
+	svc := positions.NewService(positions.ServiceOptions{Catalog: serviceCatalog()})
+	items := svc.VisibleWithMarks(catalog.Filter{}, nil)
+
+	got := svc.FilterToMatches(items, nil)
+	if len(got) != 0 {
+		t.Fatalf("FilterToMatches with no matches = %v, want empty", itemIDs(got))
+	}
+}
+
+// TestFilterToMatchesDoesNotTouchFacetFilters guards the "must not touch
+// facet filters" half of the brief: applying it on top of a facet-filtered
+// selection must never resurrect an item the facet filter already dropped,
+// even if that item's ID is in the match set.
+func TestFilterToMatchesDoesNotTouchFacetFilters(t *testing.T) {
+	svc := positions.NewService(positions.ServiceOptions{Catalog: serviceCatalog()})
+	items := svc.VisibleWithMarks(catalog.Filter{Include: map[string][]string{"level": {"easy"}}}, nil)
+
+	// Item "2" is level=hard, so the facet filter above already excludes it —
+	// even though it is a "match", it must not reappear here.
+	got := svc.FilterToMatches(items, map[string]bool{"1": true, "2": true, "3": true})
+
+	if len(got) != 2 {
+		t.Fatalf("FilterToMatches on top of a facet filter = %v, want only the 2 easy items", itemIDs(got))
+	}
+	for _, item := range got {
+		if item.ID == "2" {
+			t.Fatalf("FilterToMatches resurrected item 2, which the facet filter (level=easy) already excluded")
 		}
 	}
 }

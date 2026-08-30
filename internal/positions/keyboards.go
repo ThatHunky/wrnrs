@@ -186,6 +186,115 @@ func BrowseKeyboard(language, itemID string, index int, tried, favorited, soloMo
 	}}
 }
 
+// wishAnswerLabel resolves one wish-answer button's display label from the
+// "positions.wish.<answer>" i18n key, with the same nil-bundle /
+// missing-key fallback to the raw answer word as facetNameLabel and
+// facetValueLabel above.
+func wishAnswerLabel(language, answer string) string {
+	if facetBundle == nil {
+		return answer
+	}
+	key := "positions.wish." + answer
+	if text := facetBundle.Text(language, key); text != key {
+		return text
+	}
+	return answer
+}
+
+// wishRow builds the row of the three personal wish-answer buttons shown
+// under a position card. current is the caller's stored answer for itemID
+// ("want"/"curious"/"no"), or "" if unanswered; the matching button (if any)
+// is marked with a check, mirroring how FiltersKeyboard marks a selected
+// facet value. Unlike the tried/favorited/hidden row, this one never carries
+// a lock: a wish answer is personal and needs no pair, unlike the
+// pair-shared marks.
+func wishRow(language, itemID, current string) []telegram.InlineKeyboardButton {
+	labels := map[string]string{
+		"want":    wishAnswerLabel(language, "want"),
+		"curious": wishAnswerLabel(language, "curious"),
+		"no":      wishAnswerLabel(language, "no"),
+	}
+	if text, ok := labels[current]; ok {
+		labels[current] = "✓ " + text
+	}
+	prefix := "pos:wish:" + itemID + ":"
+	return []telegram.InlineKeyboardButton{
+		{Text: labels["want"], CallbackData: prefix + "want"},
+		{Text: labels["curious"], CallbackData: prefix + "curious"},
+		{Text: labels["no"], CallbackData: prefix + "no"},
+	}
+}
+
+// insertRowBeforeLast returns a copy of rows with newRow inserted
+// immediately before the final row. It exists so a caller can extend an
+// already-built keyboard with one more row without changing the function
+// that built it — every existing caller and test of BrowseKeyboard and
+// FiltersKeyboard is unaffected by BrowseKeyboardWithWish and
+// FiltersKeyboardWithMatches below.
+func insertRowBeforeLast(rows [][]telegram.InlineKeyboardButton, newRow []telegram.InlineKeyboardButton) [][]telegram.InlineKeyboardButton {
+	if len(rows) == 0 {
+		return [][]telegram.InlineKeyboardButton{newRow}
+	}
+	out := make([][]telegram.InlineKeyboardButton, 0, len(rows)+1)
+	out = append(out, rows[:len(rows)-1]...)
+	out = append(out, newRow)
+	out = append(out, rows[len(rows)-1])
+	return out
+}
+
+// BrowseKeyboardWithWish wraps BrowseKeyboard with one more row: the three
+// personal wish-answer buttons (pos:wish:{id}:{want|curious|no}), inserted
+// just above the filters/menu escape row. It is a separate function, rather
+// than a new BrowseKeyboard parameter, so BrowseKeyboard's own signature —
+// and every pre-existing test of it — stays untouched. wishAnswer is the
+// caller's current answer for itemID, or "" if unanswered; it carries no
+// solo lock, since a wish is a personal answer that works without a pair
+// (see the brief: "Працює соло").
+func BrowseKeyboardWithWish(language, itemID string, index int, tried, favorited, soloMode bool, wishAnswer string) telegram.InlineKeyboardMarkup {
+	markup := BrowseKeyboard(language, itemID, index, tried, favorited, soloMode)
+	markup.InlineKeyboard = insertRowBeforeLast(markup.InlineKeyboard, wishRow(language, itemID, wishAnswer))
+	return markup
+}
+
+// matchesOnlyLabel resolves the matches-only toggle's display label from the
+// "positions.filter.matches_only" i18n key, degrading to the raw key itself
+// when facetBundle is nil or the key is missing — unlike facetNameLabel and
+// wishAnswerLabel, there is no bare-word fallback that reads sensibly here.
+func matchesOnlyLabel(language string) string {
+	key := "positions.filter.matches_only"
+	if facetBundle == nil {
+		return key
+	}
+	return facetBundle.Text(language, key)
+}
+
+// matchesOnlyRow builds the single-button row for the matches-only toggle.
+// matchesOnly marks the current state with a check; hasPair false renders
+// the same lock marker the mark buttons already use for a solo viewer,
+// since matches (like marks) are pair-shared and depend on the database,
+// not on anything in the catalog itself.
+func matchesOnlyRow(language string, matchesOnly, hasPair bool) []telegram.InlineKeyboardButton {
+	text := matchesOnlyLabel(language)
+	if matchesOnly {
+		text = "✓ " + text
+	}
+	if !hasPair {
+		text += " 🔒"
+	}
+	return []telegram.InlineKeyboardButton{{Text: text, CallbackData: "pos:matches:toggle"}}
+}
+
+// FiltersKeyboardWithMatches wraps FiltersKeyboard with one more row: the
+// pair-wide "matches only" toggle, inserted just above the browse/menu
+// escape row. Kept separate from FiltersKeyboard itself, exactly like
+// BrowseKeyboardWithWish above, so that function's signature and every
+// pre-existing test of it stay untouched.
+func FiltersKeyboardWithMatches(language string, filter catalog.Filter, facets []FacetOption, matchesOnly, hasPair bool) telegram.InlineKeyboardMarkup {
+	markup := FiltersKeyboard(language, filter, facets)
+	markup.InlineKeyboard = insertRowBeforeLast(markup.InlineKeyboard, matchesOnlyRow(language, matchesOnly, hasPair))
+	return markup
+}
+
 // HubKeyboard is the entry screen for the module: randomiser, browsing,
 // filters and the bulk send, plus the escape back to the main menu.
 func HubKeyboard(language string) telegram.InlineKeyboardMarkup {

@@ -11,6 +11,7 @@ package positions_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,6 +78,374 @@ func (noPairRepo) TogglePositionMark(context.Context, int64, string, storage.Pos
 	return false, nil
 }
 func (noPairRepo) UserLanguage(context.Context, int64) (string, error) { return "uk", nil }
+
+// The three wish-related methods below exist only so noPairRepo keeps
+// satisfying Repository after Task 5 extended it; none of the integration
+// tests in this file touch wishes, so every stub is a harmless zero value.
+func (noPairRepo) SetWishAnswer(context.Context, int64, storage.WishItemKind, string, storage.WishAnswer, time.Time) error {
+	return nil
+}
+
+func (noPairRepo) UserWishAnswers(context.Context, int64) (map[string]storage.WishAnswer, error) {
+	return map[string]storage.WishAnswer{}, nil
+}
+
+func (noPairRepo) PairWishMatches(context.Context, int64) ([]storage.WishMatch, error) {
+	return nil, nil
+}
+
+// wishRepo is a configurable Repository double for the wish-button and
+// matches-only tests below: unlike noPairRepo (always solo) and runStubRepo
+// (never touches wishes), it can be set up with a pair, marks, matches and
+// pre-existing wish answers, and it records every SetWishAnswer call so
+// tests can assert on exactly what was written.
+type wishRepo struct {
+	pair        *storage.Pair
+	marks       map[string]storage.PositionMark
+	wishAnswers map[string]storage.WishAnswer
+	matches     []storage.WishMatch
+	setCalls    []storage.WishAnswer
+}
+
+func (r *wishRepo) ActivePairForUser(context.Context, int64) (*storage.Pair, error) {
+	return r.pair, nil
+}
+
+func (r *wishRepo) PairPositionMarks(context.Context, int64) (map[string]storage.PositionMark, error) {
+	if r.marks == nil {
+		return map[string]storage.PositionMark{}, nil
+	}
+	return r.marks, nil
+}
+
+func (r *wishRepo) TogglePositionMark(context.Context, int64, string, storage.PositionMarkKind, int64, time.Time) (bool, error) {
+	return false, nil
+}
+
+func (r *wishRepo) UserLanguage(context.Context, int64) (string, error) { return "uk", nil }
+
+func (r *wishRepo) SetWishAnswer(_ context.Context, _ int64, kind storage.WishItemKind, itemID string, answer storage.WishAnswer, _ time.Time) error {
+	if r.wishAnswers == nil {
+		r.wishAnswers = map[string]storage.WishAnswer{}
+	}
+	r.wishAnswers[string(kind)+":"+itemID] = answer
+	r.setCalls = append(r.setCalls, answer)
+	return nil
+}
+
+func (r *wishRepo) UserWishAnswers(context.Context, int64) (map[string]storage.WishAnswer, error) {
+	out := make(map[string]storage.WishAnswer, len(r.wishAnswers))
+	for k, v := range r.wishAnswers {
+		out[k] = v
+	}
+	return out, nil
+}
+
+func (r *wishRepo) PairWishMatches(context.Context, int64) ([]storage.WishMatch, error) {
+	return r.matches, nil
+}
+
+// markupCall is botCall's counterpart that also keeps the keyboard markup a
+// Bot call carried, for tests that need to assert on button text or
+// callback_data rather than just the caption/text recordingBot captures.
+type markupCall struct {
+	method string
+	chatID int64
+	text   string
+	markup telegram.InlineKeyboardMarkup
+}
+
+// markupRecordingBot is a second, separate Bot double (rather than adding a
+// markup field to recordingBot's botCall) precisely so recordingBot's own
+// struct and every pre-existing test constructing a botCall{...} literal
+// positionally stay untouched.
+type markupRecordingBot struct {
+	calls []markupCall
+}
+
+func toInlineMarkup(v any) telegram.InlineKeyboardMarkup {
+	if m, ok := v.(telegram.InlineKeyboardMarkup); ok {
+		return m
+	}
+	return telegram.InlineKeyboardMarkup{}
+}
+
+func (b *markupRecordingBot) SendMessage(_ context.Context, chatID int64, text string, markup any) error {
+	b.calls = append(b.calls, markupCall{"SendMessage", chatID, text, toInlineMarkup(markup)})
+	return nil
+}
+
+func (b *markupRecordingBot) EditMessageText(_ context.Context, chatID, _ int64, text string, markup any) error {
+	b.calls = append(b.calls, markupCall{"EditMessageText", chatID, text, toInlineMarkup(markup)})
+	return nil
+}
+
+func (b *markupRecordingBot) SendPhotoBytes(_ context.Context, chatID int64, _ []byte, caption string, markup any) (telegram.SentPhoto, error) {
+	b.calls = append(b.calls, markupCall{"SendPhotoBytes", chatID, caption, toInlineMarkup(markup)})
+	return telegram.SentPhoto{FileID: "fid"}, nil
+}
+
+func (b *markupRecordingBot) SendPhotoRef(_ context.Context, chatID int64, _ string, caption string, markup any) (telegram.SentPhoto, error) {
+	b.calls = append(b.calls, markupCall{"SendPhotoRef", chatID, caption, toInlineMarkup(markup)})
+	return telegram.SentPhoto{FileID: "fid"}, nil
+}
+
+func (b *markupRecordingBot) EditMessageMediaRef(_ context.Context, chatID, _ int64, _ string, caption string, markup any) error {
+	b.calls = append(b.calls, markupCall{"EditMessageMediaRef", chatID, caption, toInlineMarkup(markup)})
+	return nil
+}
+
+func (b *markupRecordingBot) DeleteMessage(_ context.Context, chatID, _ int64) error {
+	b.calls = append(b.calls, markupCall{"DeleteMessage", chatID, "", telegram.InlineKeyboardMarkup{}})
+	return nil
+}
+
+// lastMarkup returns the markup from the most recent call markupRecordingBot
+// recorded, so a test can assert on the keyboard the current screen ended up
+// with regardless of which particular Bot method rendered it.
+func (b *markupRecordingBot) lastMarkup() telegram.InlineKeyboardMarkup {
+	if len(b.calls) == 0 {
+		return telegram.InlineKeyboardMarkup{}
+	}
+	return b.calls[len(b.calls)-1].markup
+}
+
+func (b *markupRecordingBot) lastText() string {
+	if len(b.calls) == 0 {
+		return ""
+	}
+	return b.calls[len(b.calls)-1].text
+}
+
+// buttonByCallback finds a button by exact callback_data across every row
+// of markup, or reports found=false.
+func buttonByCallback(markup telegram.InlineKeyboardMarkup, callback string) (telegram.InlineKeyboardButton, bool) {
+	for _, row := range markup.InlineKeyboard {
+		for _, button := range row {
+			if button.CallbackData == callback {
+				return button, true
+			}
+		}
+	}
+	return telegram.InlineKeyboardButton{}, false
+}
+
+// TestHandleWishRecordsAnswerSoloAndMarksTheCard pins both halves of the
+// wish button: it writes wish_answers with item_kind='position' via
+// storage.SetWishAnswer even with no active pair (wishes are personal, and
+// this module never gates them behind a pair the way marks are), and the
+// re-rendered card shows the just-recorded answer with a selection marker.
+func TestHandleWishRecordsAnswerSoloAndMarksTheCard(t *testing.T) {
+	cat := manyPositionItems(1)
+	bot := &markupRecordingBot{}
+	repo := &wishRepo{}
+	h := positions.NewHandler(positions.HandlerOptions{
+		Service:    positions.NewService(positions.ServiceOptions{Catalog: cat}),
+		Catalog:    cat,
+		Repository: repo,
+		Bot:        bot,
+		State:      newMemStateStore(),
+		I18n:       i18n.NewBundle(),
+	})
+
+	const userID = int64(30001)
+	cb := &telegram.CallbackQuery{From: telegram.User{ID: userID}, Data: "pos:wish:001:want"}
+	if err := h.HandleCallback(context.Background(), cb); err != nil {
+		t.Fatalf("HandleCallback pos:wish:001:want: %v", err)
+	}
+
+	if got := repo.wishAnswers["position:001"]; got != storage.AnswerWant {
+		t.Fatalf("SetWishAnswer wrote %q for position:001, want %q", got, storage.AnswerWant)
+	}
+
+	button, found := buttonByCallback(bot.lastMarkup(), "pos:wish:001:want")
+	if !found {
+		t.Fatalf("re-rendered keyboard %+v is missing the pos:wish:001:want button", bot.lastMarkup().InlineKeyboard)
+	}
+	if !strings.Contains(button.Text, "✓") {
+		t.Fatalf("just-recorded wish answer button %q has no selection marker", button.Text)
+	}
+}
+
+// TestMatchesOnlyFilterNarrowsBrowseToMatchedItems is the payoff scenario
+// from the task brief: with MatchesOnly saved in BrowseState and a pair with
+// exactly one matched position, pos:browse:0 must land on that matched item
+// and report a 1-item total, even though the underlying catalog has three.
+func TestMatchesOnlyFilterNarrowsBrowseToMatchedItems(t *testing.T) {
+	cat := manyPositionItems(3)
+	bot := &markupRecordingBot{}
+	repo := &wishRepo{
+		pair:    &storage.Pair{ID: 77},
+		matches: []storage.WishMatch{{ItemKind: storage.WishKindPosition, ItemID: "002"}},
+	}
+	state := newMemStateStore()
+	h := positions.NewHandler(positions.HandlerOptions{
+		Service:    positions.NewService(positions.ServiceOptions{Catalog: cat}),
+		Catalog:    cat,
+		Repository: repo,
+		Bot:        bot,
+		State:      state,
+		I18n:       i18n.NewBundle(),
+	})
+
+	const userID = int64(30002)
+	encoded, err := positions.EncodeState(positions.BrowseState{MatchesOnly: true})
+	if err != nil {
+		t.Fatalf("EncodeState: %v", err)
+	}
+	if err := state.SetModuleState(context.Background(), userID, "positions", encoded, time.Hour); err != nil {
+		t.Fatalf("seed module state: %v", err)
+	}
+
+	cb := &telegram.CallbackQuery{From: telegram.User{ID: userID}, Data: "pos:browse:0"}
+	if err := h.HandleCallback(context.Background(), cb); err != nil {
+		t.Fatalf("HandleCallback pos:browse:0: %v", err)
+	}
+
+	text := bot.lastText()
+	if !strings.Contains(text, "Позиція 002") {
+		t.Fatalf("browse text %q does not show the one matched item (002)", text)
+	}
+	if !strings.Contains(text, "1/1") {
+		t.Fatalf("browse text %q does not report a 1-item total under MatchesOnly", text)
+	}
+}
+
+// TestMatchesOnlyWithZeroMatchesShowsExplanationNotADeadEnd pins the
+// self-review requirement: MatchesOnly with zero matches must not render an
+// unexplained empty screen. It must use the matches-specific empty copy
+// (distinct from the generic "no results" text) and still offer a way out
+// via HubKeyboard's own Filters button.
+func TestMatchesOnlyWithZeroMatchesShowsExplanationNotADeadEnd(t *testing.T) {
+	cat := manyPositionItems(3)
+	bot := &markupRecordingBot{}
+	repo := &wishRepo{pair: &storage.Pair{ID: 78}}
+	state := newMemStateStore()
+	h := positions.NewHandler(positions.HandlerOptions{
+		Service:    positions.NewService(positions.ServiceOptions{Catalog: cat}),
+		Catalog:    cat,
+		Repository: repo,
+		Bot:        bot,
+		State:      state,
+		I18n:       i18n.NewBundle(),
+	})
+
+	const userID = int64(30003)
+	encoded, err := positions.EncodeState(positions.BrowseState{MatchesOnly: true})
+	if err != nil {
+		t.Fatalf("EncodeState: %v", err)
+	}
+	if err := state.SetModuleState(context.Background(), userID, "positions", encoded, time.Hour); err != nil {
+		t.Fatalf("seed module state: %v", err)
+	}
+
+	cb := &telegram.CallbackQuery{From: telegram.User{ID: userID}, Data: "pos:browse:0"}
+	if err := h.HandleCallback(context.Background(), cb); err != nil {
+		t.Fatalf("HandleCallback pos:browse:0: %v", err)
+	}
+
+	text := bot.lastText()
+	if text == "" {
+		t.Fatal("MatchesOnly with zero matches produced no text at all")
+	}
+	if _, found := buttonByCallback(bot.lastMarkup(), "pos:filters"); !found {
+		t.Fatalf("empty matches-only screen %+v offers no way to reach Filters and turn the toggle off", bot.lastMarkup().InlineKeyboard)
+	}
+}
+
+// TestHandleMatchesToggleFlipsStateAndPersists pins that pos:matches:toggle
+// actually flips BrowseState.MatchesOnly and that the flip survives a
+// second, independent HandleCallback round trip through the same
+// StateStore-backed persistence every other piece of BrowseState already
+// relies on.
+func TestHandleMatchesToggleFlipsStateAndPersists(t *testing.T) {
+	cat := manyPositionItems(3)
+	bot := &markupRecordingBot{}
+	repo := &wishRepo{pair: &storage.Pair{ID: 79}}
+	state := newMemStateStore()
+	h := positions.NewHandler(positions.HandlerOptions{
+		Service:    positions.NewService(positions.ServiceOptions{Catalog: cat}),
+		Catalog:    cat,
+		Repository: repo,
+		Bot:        bot,
+		State:      state,
+		I18n:       i18n.NewBundle(),
+	})
+
+	const userID = int64(30004)
+	cb := &telegram.CallbackQuery{From: telegram.User{ID: userID}, Data: "pos:matches:toggle"}
+	if err := h.HandleCallback(context.Background(), cb); err != nil {
+		t.Fatalf("HandleCallback pos:matches:toggle: %v", err)
+	}
+
+	raw, err := state.ModuleState(context.Background(), userID, "positions")
+	if err != nil {
+		t.Fatalf("ModuleState: %v", err)
+	}
+	decoded, err := positions.DecodeState(raw)
+	if err != nil {
+		t.Fatalf("DecodeState: %v", err)
+	}
+	if !decoded.MatchesOnly {
+		t.Fatal("pos:matches:toggle did not persist MatchesOnly=true")
+	}
+
+	button, found := buttonByCallback(bot.lastMarkup(), "pos:matches:toggle")
+	if !found {
+		t.Fatalf("filters keyboard %+v is missing the pos:matches:toggle button", bot.lastMarkup().InlineKeyboard)
+	}
+	if !strings.Contains(button.Text, "✓") {
+		t.Fatalf("matches-only toggle button %q has no selection marker after being turned on", button.Text)
+	}
+}
+
+// TestHandleMatchesToggleWithoutAPairIsANoOp pins the lock semantics end to
+// end: a pos:matches:toggle callback reaching the handler without an active
+// pair (e.g. a stale callback from before the pair was dissolved) must not
+// flip MatchesOnly — the UI never offers an interactive toggle without a
+// pair in the first place.
+func TestHandleMatchesToggleWithoutAPairIsANoOp(t *testing.T) {
+	cat := manyPositionItems(3)
+	bot := &markupRecordingBot{}
+	repo := &wishRepo{}
+	state := newMemStateStore()
+	h := positions.NewHandler(positions.HandlerOptions{
+		Service:    positions.NewService(positions.ServiceOptions{Catalog: cat}),
+		Catalog:    cat,
+		Repository: repo,
+		Bot:        bot,
+		State:      state,
+		I18n:       i18n.NewBundle(),
+	})
+
+	const userID = int64(30005)
+	cb := &telegram.CallbackQuery{From: telegram.User{ID: userID}, Data: "pos:matches:toggle"}
+	if err := h.HandleCallback(context.Background(), cb); err != nil {
+		t.Fatalf("HandleCallback pos:matches:toggle: %v", err)
+	}
+
+	raw, err := state.ModuleState(context.Background(), userID, "positions")
+	if err != nil {
+		t.Fatalf("ModuleState: %v", err)
+	}
+	if raw != "" {
+		decoded, err := positions.DecodeState(raw)
+		if err != nil {
+			t.Fatalf("DecodeState: %v", err)
+		}
+		if decoded.MatchesOnly {
+			t.Fatal("pos:matches:toggle flipped MatchesOnly=true for a solo user; the toggle must be a no-op without a pair")
+		}
+	}
+
+	button, found := buttonByCallback(bot.lastMarkup(), "pos:matches:toggle")
+	if !found {
+		t.Fatalf("filters keyboard %+v is missing the pos:matches:toggle button", bot.lastMarkup().InlineKeyboard)
+	}
+	if !strings.Contains(button.Text, "🔒") {
+		t.Fatalf("matches-only toggle button %q has no lock marker for a solo user", button.Text)
+	}
+}
 
 // memStateStore is a minimal in-process StateStore so BrowseState (and, in
 // particular, its Draw counter) actually persists across calls the way

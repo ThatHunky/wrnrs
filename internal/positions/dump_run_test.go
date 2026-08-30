@@ -71,6 +71,21 @@ func (runStubRepo) UserLanguage(context.Context, int64) (string, error) {
 	return "uk", nil
 }
 
+// The three wish-related methods below exist only so runStubRepo keeps
+// satisfying Repository after Task 5 extended it; none of the dump-run
+// tests in this file touch wishes, so every stub is a harmless zero value.
+func (runStubRepo) SetWishAnswer(context.Context, int64, storage.WishItemKind, string, storage.WishAnswer, time.Time) error {
+	return nil
+}
+
+func (runStubRepo) UserWishAnswers(context.Context, int64) (map[string]storage.WishAnswer, error) {
+	return map[string]storage.WishAnswer{}, nil
+}
+
+func (runStubRepo) PairWishMatches(context.Context, int64) ([]storage.WishMatch, error) {
+	return nil, nil
+}
+
 func newRunTestHandler(t *testing.T, sendErr error) *Handler {
 	t.Helper()
 	cat := &catalog.Catalog{

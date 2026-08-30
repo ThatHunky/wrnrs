@@ -12,8 +12,16 @@ import (
 // under the module key, never in the FSM slot, so it cannot clobber onboarding.
 type BrowseState struct {
 	Filter catalog.Filter `json:"f"`
-	Index  int            `json:"i"`
-	Cycle  int            `json:"c"`
+	// MatchesOnly narrows the browse selection to positions both partners
+	// are open to, per the Wishlist module's matches (storage.WishMatch).
+	// It lives beside Filter, not inside it — catalog.Filter operates on
+	// facet values baked into the catalog itself, while a match lives in
+	// the database and depends on the pair, so it cannot be expressed as a
+	// Filter.Include entry. See Service.FilterToMatches, which applies it
+	// as a separate step after Filtered().
+	MatchesOnly bool `json:"m"`
+	Index       int  `json:"i"`
+	Cycle       int  `json:"c"`
 	// Draw counts every randomiser draw the caller has made, independent of
 	// Cycle (which only advances once the whole selection has been fully
 	// tried). It is folded into the shuffle bucket so two consecutive draws
@@ -82,6 +90,25 @@ func (s *Service) VisibleWithMarks(filter catalog.Filter, marks map[string]stora
 			continue
 		}
 		out = append(out, item)
+	}
+	return out
+}
+
+// FilterToMatches narrows items to only those whose ID is a key in
+// matchIDs. It is a pure, DB-free function — the caller (Handler) is the one
+// that turns a pair id into matchIDs via storage.PairWishMatches — applied
+// as a separate step AFTER VisibleWithMarks, never folded into
+// catalog.Filter: matches live in the database and depend on the active
+// pair, while Filter operates purely on facet values baked into the catalog
+// at ingest time. A nil or empty matchIDs narrows to nothing, not to
+// everything, so an unpaired or match-free caller sees an empty selection
+// rather than an unfiltered one.
+func (s *Service) FilterToMatches(items []catalog.Item, matchIDs map[string]bool) []catalog.Item {
+	out := make([]catalog.Item, 0, len(items))
+	for _, item := range items {
+		if matchIDs[item.ID] {
+			out = append(out, item)
+		}
 	}
 	return out
 }

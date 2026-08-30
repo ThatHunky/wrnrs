@@ -151,6 +151,158 @@ func TestBrowseCaptionFallsBackToEnglishWhenTranslationMissing(t *testing.T) {
 	}
 }
 
+// TestBrowseKeyboardWithWishExposesAllThreeAnswers pins the wish button's
+// callback shape from the brief: pos:wish:{id}:{answer} for each of the
+// three personal answers, dispatched by this module's own handler rather
+// than going through the wishlist module's wish:answer: prefix. It also
+// pins the worst-case callback_data length against the real catalog's
+// longest id (519) and longest answer word (curious), which must stay
+// inside Telegram's 64-byte callback_data cap.
+func TestBrowseKeyboardWithWishExposesAllThreeAnswers(t *testing.T) {
+	markup := positions.BrowseKeyboardWithWish("uk", "519", 4, false, false, false, "")
+
+	var data []string
+	for _, row := range markup.InlineKeyboard {
+		for _, button := range row {
+			data = append(data, button.CallbackData)
+			if len(button.CallbackData) > 64 {
+				t.Fatalf("callback_data %q is %d bytes, over Telegram's 64-byte cap", button.CallbackData, len(button.CallbackData))
+			}
+		}
+	}
+	joined := strings.Join(data, " ")
+	for _, want := range []string{"pos:wish:519:want", "pos:wish:519:curious", "pos:wish:519:no"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("keyboard callbacks %q are missing %q", joined, want)
+		}
+	}
+}
+
+// TestBrowseKeyboardWithWishMarksTheCurrentAnswer pins "show the current
+// answer if one exists": the button matching the caller's stored answer
+// must be visually marked, so a solo user (wish answers need no pair) can
+// tell what they already said without re-reading the card.
+func TestBrowseKeyboardWithWishMarksTheCurrentAnswer(t *testing.T) {
+	markup := positions.BrowseKeyboardWithWish("uk", "519", 0, false, false, false, "curious")
+
+	var curiousText, wantText string
+	for _, row := range markup.InlineKeyboard {
+		for _, button := range row {
+			if button.CallbackData == "pos:wish:519:curious" {
+				curiousText = button.Text
+			}
+			if button.CallbackData == "pos:wish:519:want" {
+				wantText = button.Text
+			}
+		}
+	}
+	if !strings.Contains(curiousText, "✓") {
+		t.Fatalf("current wish answer button %q has no selection marker", curiousText)
+	}
+	if strings.Contains(wantText, "✓") {
+		t.Fatalf("unselected wish answer button %q wrongly marked as selected", wantText)
+	}
+}
+
+// TestBrowseKeyboardWithWishNeverLocksSolo pins that the wish row carries no
+// lock marker regardless of soloMode: unlike the pair-shared marks, a wish
+// answer is personal and works without a pair.
+func TestBrowseKeyboardWithWishNeverLocksSolo(t *testing.T) {
+	markup := positions.BrowseKeyboardWithWish("uk", "519", 0, false, false, true, "")
+
+	for _, row := range markup.InlineKeyboard {
+		for _, button := range row {
+			if strings.HasPrefix(button.CallbackData, "pos:wish:") && strings.Contains(button.Text, "🔒") {
+				t.Fatalf("solo wish button %q carries a lock marker; wish answers need no pair", button.Text)
+			}
+		}
+	}
+}
+
+// TestBrowseKeyboardWithWishPreservesEveryExistingControl guards that
+// wrapping BrowseKeyboard did not drop any of its existing rows — the
+// wrapper must be additive only.
+func TestBrowseKeyboardWithWishPreservesEveryExistingControl(t *testing.T) {
+	markup := positions.BrowseKeyboardWithWish("uk", "519", 4, false, false, false, "")
+
+	var data []string
+	for _, row := range markup.InlineKeyboard {
+		for _, button := range row {
+			data = append(data, button.CallbackData)
+		}
+	}
+	joined := strings.Join(data, " ")
+	for _, want := range []string{"pos:browse:3", "pos:browse:5", "pos:random", "pos:mark:tried:519", "pos:mark:favorited:519", "pos:mark:hidden:519", "pos:filters"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("wrapped keyboard callbacks %q are missing %q", joined, want)
+		}
+	}
+}
+
+// TestFiltersKeyboardWithMatchesLocksWithoutAPair pins "without a pair the
+// toggle is inactive — show it with a lock, the way the mark buttons
+// already do".
+func TestFiltersKeyboardWithMatchesLocksWithoutAPair(t *testing.T) {
+	markup := positions.FiltersKeyboardWithMatches("uk", catalog.Filter{}, nil, false, false)
+
+	var matchesText string
+	for _, row := range markup.InlineKeyboard {
+		for _, button := range row {
+			if button.CallbackData == "pos:matches:toggle" {
+				matchesText = button.Text
+			}
+		}
+	}
+	if matchesText == "" {
+		t.Fatal("filters-with-matches keyboard is missing the pos:matches:toggle button")
+	}
+	if !strings.Contains(matchesText, "🔒") {
+		t.Fatalf("matches-only toggle %q has no lock marker without a pair", matchesText)
+	}
+}
+
+// TestFiltersKeyboardWithMatchesMarksOnState pins the checkmark half: with a
+// pair and the toggle on, the button must show a selection marker and no
+// lock.
+func TestFiltersKeyboardWithMatchesMarksOnState(t *testing.T) {
+	markup := positions.FiltersKeyboardWithMatches("uk", catalog.Filter{}, nil, true, true)
+
+	var matchesText string
+	for _, row := range markup.InlineKeyboard {
+		for _, button := range row {
+			if button.CallbackData == "pos:matches:toggle" {
+				matchesText = button.Text
+			}
+		}
+	}
+	if !strings.Contains(matchesText, "✓") {
+		t.Fatalf("matches-only toggle %q has no selection marker when on", matchesText)
+	}
+	if strings.Contains(matchesText, "🔒") {
+		t.Fatalf("matches-only toggle %q carries a lock marker despite having a pair", matchesText)
+	}
+}
+
+// TestFiltersKeyboardWithMatchesPreservesFacetRowsAndEscape guards that the
+// wrapper is additive only, mirroring the BrowseKeyboardWithWish equivalent.
+func TestFiltersKeyboardWithMatchesPreservesFacetRowsAndEscape(t *testing.T) {
+	facets := []positions.FacetOption{{Facet: "level", Values: []string{"easy"}}}
+	markup := positions.FiltersKeyboardWithMatches("uk", catalog.Filter{}, facets, false, true)
+
+	var data []string
+	for _, row := range markup.InlineKeyboard {
+		for _, button := range row {
+			data = append(data, button.CallbackData)
+		}
+	}
+	joined := strings.Join(data, " ")
+	for _, want := range []string{"pos:filter:level:easy", "pos:browse:0", "menu:main", "pos:matches:toggle"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("filters-with-matches keyboard callbacks %q are missing %q", joined, want)
+		}
+	}
+}
+
 func TestBrowseKeyboardWrapsNavigationAtZero(t *testing.T) {
 	markup := positions.BrowseKeyboard("uk", "1", 0, false, false, false)
 	var data []string
