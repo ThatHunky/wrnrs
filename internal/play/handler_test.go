@@ -114,7 +114,7 @@ func TestCardKeyboardOffersNextSkipAndFilters(t *testing.T) {
 	}
 }
 
-func TestHubKeyboardOffersOpenFiltersAndMenu(t *testing.T) {
+func TestHubKeyboardOffersNextFiltersAndMenu(t *testing.T) {
 	markup := play.HubKeyboard(testBundle(), "uk")
 
 	var data, texts []string
@@ -128,7 +128,7 @@ func TestHubKeyboardOffersOpenFiltersAndMenu(t *testing.T) {
 		}
 	}
 	joined := strings.Join(data, " ")
-	for _, want := range []string{"play:open", "play:filters", "menu:main"} {
+	for _, want := range []string{"play:next", "play:filters", "menu:main"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("hub keyboard callbacks %q are missing %q", joined, want)
 		}
@@ -136,6 +136,28 @@ func TestHubKeyboardOffersOpenFiltersAndMenu(t *testing.T) {
 	labels := strings.Join(texts, " ")
 	if !strings.Contains(labels, "ФІЛЬТРИ-МАРКЕР") {
 		t.Fatalf("hub keyboard labels %q do not come from the bundle", labels)
+	}
+}
+
+// TestHubKeyboardPrimaryButtonDealsACardInsteadOfReopeningTheHub pins the
+// fix for the defect where HubKeyboard's own primary button carried
+// "play:open" — the exact callback the hub screen itself is reached by
+// (see internal/app/modules.go's CallbackPrefix+"open" and
+// internal/play/handler.go's "play:open" case). A user who opened the
+// module and tapped the obvious first button on the hub just got the hub
+// again: the module was unreachable from its own entry screen. The primary
+// button must carry "play:next" instead, so tapping it deals the first
+// card via handler.go's showCard exactly like CardKeyboard's own "Next"
+// button does afterward.
+func TestHubKeyboardPrimaryButtonDealsACardInsteadOfReopeningTheHub(t *testing.T) {
+	markup := play.HubKeyboard(testBundle(), "uk")
+
+	if len(markup.InlineKeyboard) == 0 || len(markup.InlineKeyboard[0]) == 0 {
+		t.Fatal("hub keyboard has no primary button row")
+	}
+	primary := markup.InlineKeyboard[0][0]
+	if primary.CallbackData != "play:next" {
+		t.Fatalf("hub keyboard primary button callback = %q, want %q; %q would just redisplay the hub instead of drawing a card", primary.CallbackData, "play:next", "play:open")
 	}
 }
 

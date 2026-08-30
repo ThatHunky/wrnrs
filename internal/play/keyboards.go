@@ -147,16 +147,24 @@ func CardKeyboard(bundle *i18n.Bundle, language string) telegram.InlineKeyboardM
 }
 
 // HubKeyboard is the module's entry screen: draw the first card, adjust
-// filters, or back to the app's main menu. It reuses the "play.next" label
-// ("▶ Далі") for the opening draw — there is no separate "start playing"
-// key in the brief's fixed vocabulary, and "Next" reads naturally as "deal
-// the first card" too.
+// filters, or back to the app's main menu. Its primary button carries
+// "play:next" — the same callback CardKeyboard's own "Next" button uses —
+// not "play:open": the hub itself is reached via "play:open" (the
+// module's entry callback, see internal/app/modules.go's
+// CallbackPrefix+"open"), so wiring the hub's own button to that same
+// callback would just redisplay the hub forever, with no way to ever reach
+// a card. It reuses the "play.next" label ("▶ Далі") for the opening draw
+// rather than a dedicated "start" key: the same word carries the reader
+// from the hub into the first card and from card to card afterward, so the
+// button never has to say something different once play is underway — see
+// internal/play/handler.go's showCard, which treats this exactly like any
+// other play:next draw (including flipping whose turn is next).
 func HubKeyboard(bundle *i18n.Bundle, language string) telegram.InlineKeyboardMarkup {
 	openText := bundle.Text(language, "play.next")
 	filtersText := bundle.Text(language, "play.filters")
 
 	return telegram.InlineKeyboardMarkup{InlineKeyboard: [][]telegram.InlineKeyboardButton{
-		{{Text: openText, CallbackData: "play:open"}},
+		{{Text: openText, CallbackData: "play:next"}},
 		{{Text: filtersText, CallbackData: "play:filters"}},
 		{{Text: menuButtonText(language), CallbackData: "menu:main"}},
 	}}
