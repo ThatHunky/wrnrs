@@ -168,6 +168,24 @@
     "positions.value.type.sideways": "збоку",
     "positions.value.type.sitting": "сидячи",
     "positions.value.type.standing": "стоячи",
-    "positions.value.type.woman-on-top": "жінка зверху"
+    "positions.value.type.woman-on-top": "жінка зверху",
+    "wish.hub.title": "Бажання",
+    "wish.hub.intro": "Відмічай, чого хочеш. Партнер не побачить твоїх «ні» — тільки те, у чому ви збіглися.",
+    "wish.hub.progress": "Відмічено: %d з %d",
+    "wish.hub.partner_active": "Партнер теж відмічає",
+    "wish.hub.swipe": "💛 Відмічати",
+    "wish.hub.matches": "🔥 Збіги (%d)",
+    "wish.hub.mine": "📊 Мої відповіді",
+    "wish.answer.want": "💛 Хочу",
+    "wish.answer.curious": "🤔 Цікаво",
+    "wish.answer.no": "🚫 Ні",
+    "wish.answer.skip": "⏭ Пропустити",
+    "wish.done": "Це все, що є. Можеш переглянути свої відповіді або зазирнути у збіги.",
+    "wish.matches.title": "Збіги",
+    "wish.matches.empty": "Поки порожньо. Це не означає «не збіглося» — можливо, партнер ще не дійшов.",
+    "wish.matches.needs_pair": "Збіги зʼявляться, коли буде пара. Відмічати можна вже зараз — відповіді збережуться.",
+    "wish.mine.title": "Мої відповіді",
+    "wish.mine.empty": "Ти ще нічого не відмічав.",
+    "wish.privacy_note": "Партнер бачить лише збіги, ніколи — окремі відповіді."
   }
 }

@@ -168,6 +168,24 @@
     "positions.value.type.sideways": "Sideways",
     "positions.value.type.sitting": "Sitting",
     "positions.value.type.standing": "Standing",
-    "positions.value.type.woman-on-top": "Woman on top"
+    "positions.value.type.woman-on-top": "Woman on top",
+    "wish.hub.title": "Wishes",
+    "wish.hub.intro": "Mark what you want. Your partner never sees your \"no\" — only what you both agreed on.",
+    "wish.hub.progress": "Marked: %d of %d",
+    "wish.hub.partner_active": "Your partner is marking too",
+    "wish.hub.swipe": "💛 Start marking",
+    "wish.hub.matches": "🔥 Matches (%d)",
+    "wish.hub.mine": "📊 My answers",
+    "wish.answer.want": "💛 Want",
+    "wish.answer.curious": "🤔 Curious",
+    "wish.answer.no": "🚫 No",
+    "wish.answer.skip": "⏭ Skip",
+    "wish.done": "That's everything there is. You can look back at your own answers or check the matches.",
+    "wish.matches.title": "Matches",
+    "wish.matches.empty": "Nothing here yet — and that's not the same as \"no matches\". Your partner may simply not have gotten there yet.",
+    "wish.matches.needs_pair": "Matches will appear once you have a pair. You can start marking now — your answers will be saved.",
+    "wish.mine.title": "My answers",
+    "wish.mine.empty": "You haven't marked anything yet.",
+    "wish.privacy_note": "Your partner only ever sees matches, never individual answers."
   }
 }
