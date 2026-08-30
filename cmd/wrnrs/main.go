@@ -27,6 +27,7 @@ import (
 	"wrnrs/internal/state"
 	"wrnrs/internal/storage"
 	"wrnrs/internal/telegram"
+	"wrnrs/internal/wishlist"
 )
 
 func main() {
@@ -193,6 +194,37 @@ func run(logger *slog.Logger) error {
 			Handler:        positionsHandler,
 		}); err != nil {
 			return fmt.Errorf("register positions module: %w", err)
+		}
+	}
+
+	// The wishes catalog module follows the exact same degrade-not-die shape
+	// as the positions catalog above: a missing or invalid content/wishes.v1.json
+	// must never stop the bot — it must only leave the module unregistered,
+	// so the bot's other live modules (the card game, positions) keep
+	// working. Register() failing is still a programming error (a colliding
+	// callback prefix, an empty id) and fails startup loudly.
+	wishesCatalog, err := loadWishesCatalog(cfg.WishesCatalogPath)
+	if err != nil {
+		logger.Warn("wishes catalog unavailable; module disabled", "err", err)
+	} else if err := wishesCatalog.Validate([]string{"uk", "en"}); err != nil {
+		logger.Warn("wishes catalog invalid; module disabled", "err", err)
+	} else {
+		wishlistHandler := wishlist.NewHandler(wishlist.HandlerOptions{
+			Service:    wishlist.NewService(wishlist.ServiceOptions{Catalog: wishesCatalog}),
+			Repository: repo,
+			Bot:        bot,
+			I18n:       bundle,
+			Logger:     logger,
+		})
+		if err := application.Registry().Register(modules.Module{
+			ID:             "wishlist",
+			TitleKey:       "wish.hub.title",
+			Icon:           "💛",
+			CallbackPrefix: "wish:",
+			Gate:           modules.Gate{Needs18Plus: true, NeedsMature: true},
+			Handler:        wishlistHandler,
+		}); err != nil {
+			return fmt.Errorf("register wishlist module: %w", err)
 		}
 	}
 
@@ -496,6 +528,19 @@ func loadStyleCatalog(path string) (*content.StyleCatalog, error) {
 // the module on a validation failure instead of failing boot the way a bad
 // deck or style catalog does.
 func loadPositionsCatalog(path string) (*catalog.Catalog, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return catalog.Load(file)
+}
+
+// loadWishesCatalog only opens and decodes the file; like
+// loadPositionsCatalog it deliberately does not call Validate itself, so its
+// caller can log a warning and disable the module on a validation failure
+// instead of failing boot.
+func loadWishesCatalog(path string) (*catalog.Catalog, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
