@@ -78,3 +78,87 @@ func TestFacetsDeduplicatesRepeatedValues(t *testing.T) {
 		t.Fatalf("location facet = %q, want bed,sofa without duplicates", got)
 	}
 }
+
+func TestFacetsReturnsSortedFacetValuesAndUnknowns(t *testing.T) {
+	// Fixture with 5 values in one facet, deliberately in non-sorted order
+	fixture := `{
+		"version": 1,
+		"slugs": {
+			"zebra-loc": {"facet": "location", "value": "zebra"},
+			"apple-loc": {"facet": "location", "value": "apple"},
+			"monkey-loc": {"facet": "location", "value": "monkey"},
+			"banana-loc": {"facet": "location", "value": "banana"},
+			"cherry-loc": {"facet": "location", "value": "cherry"}
+		}
+	}`
+
+	tax, err := positions.LoadTaxonomy(strings.NewReader(fixture))
+	if err != nil {
+		t.Fatalf("LoadTaxonomy: %v", err)
+	}
+
+	// Pass slugs and unknowns in deliberately non-sorted order
+	facets, unknown := tax.Facets([]string{
+		"zebra-loc", "apple-loc", "monkey-loc", "banana-loc", "cherry-loc",
+		"zulu", "alpha", "november", "bravo", "charlie",
+	})
+
+	// Assert facet values come back sorted
+	if got := strings.Join(facets["location"], ","); got != "apple,banana,cherry,monkey,zebra" {
+		t.Fatalf("location facet = %q, want apple,banana,cherry,monkey,zebra (sorted)", got)
+	}
+
+	// Assert unknown slugs come back sorted
+	if got := strings.Join(unknown, ","); got != "alpha,bravo,charlie,november,zulu" {
+		t.Fatalf("unknown = %q, want alpha,bravo,charlie,november,zulu (sorted)", got)
+	}
+}
+
+func TestLoadTaxonomyRejectsNonPositiveVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		fixture string
+	}{
+		{
+			name: "version zero",
+			fixture: `{
+				"version": 0,
+				"slugs": {"some-slug": {"facet": "facet", "value": "val"}}
+			}`,
+		},
+		{
+			name: "version negative",
+			fixture: `{
+				"version": -1,
+				"slugs": {"some-slug": {"facet": "facet", "value": "val"}}
+			}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := positions.LoadTaxonomy(strings.NewReader(tt.fixture))
+			if err == nil {
+				t.Fatalf("LoadTaxonomy: want error, got nil")
+			}
+			if !strings.Contains(err.Error(), "positive") {
+				t.Fatalf("LoadTaxonomy error = %q, want substring 'positive'", err.Error())
+			}
+		})
+	}
+}
+
+func TestLoadTaxonomyRejectsEmptySlugs(t *testing.T) {
+	fixture := `{
+		"version": 1,
+		"slugs": {}
+	}`
+
+	_, err := positions.LoadTaxonomy(strings.NewReader(fixture))
+	if err == nil {
+		t.Fatalf("LoadTaxonomy: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "slugs") {
+		t.Fatalf("LoadTaxonomy error = %q, want substring 'slugs'", err.Error())
+	}
+}
