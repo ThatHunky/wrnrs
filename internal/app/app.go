@@ -178,7 +178,7 @@ func (a *App) handleInlineQuery(ctx context.Context, query *telegram.InlineQuery
 		return err
 	}
 	lang := a.userLanguage(ctx, query.From.ID, normalizeLanguage(query.From.LanguageCode))
-	card, ok := a.safeInlineCard(lang)
+	card, ok := a.safeInlineCard()
 	if !ok {
 		return a.bot.AnswerInlineQuery(ctx, query.ID, nil, 0, true)
 	}
@@ -202,7 +202,7 @@ func (a *App) handleInlineQuery(ctx context.Context, query *telegram.InlineQuery
 	return a.bot.AnswerInlineQuery(ctx, query.ID, []telegram.InlineQueryResult{result}, 0, true)
 }
 
-func (a *App) safeInlineCard(language string) (content.Card, bool) {
+func (a *App) safeInlineCard() (content.Card, bool) {
 	if a.deck == nil {
 		return content.Card{}, false
 	}
@@ -737,13 +737,10 @@ func (a *App) handleCallback(ctx context.Context, cb *telegram.CallbackQuery) er
 		return a.themeMenu(ctx, cb, chatID, lang)
 	case cb.Data == "theme:bg:upload":
 		lang = a.userLanguage(ctx, cb.From.ID, lang)
-		allowed, err := a.allowUserAction(ctx, cb.From.ID, "upload", 5, time.Hour)
-		if err != nil {
-			return err
-		}
-		if !allowed {
-			return a.editCallbackScreen(ctx, cb, chatID, rateLimitedText(lang), a.themeBgKeyboard(ctx, cb.From.ID, lang))
-		}
+		// Showing the upload prompt does not spend an "upload" rate-limit token:
+		// the token bucket is charged once the file actually arrives, in
+		// handleBackgroundUpload. The asset-count check below already gates
+		// whether it's worth showing the prompt at all.
 		count, err := a.repo.UserActiveUploadedBackgroundsCount(ctx, cb.From.ID)
 		if err != nil {
 			return err
@@ -2486,9 +2483,9 @@ func (a *App) themeCardInput(ctx context.Context, userID int64, language string)
 				}
 			}
 		} else {
-			// User uploaded background (verify owner is correct if status is active)
+			// User uploaded background (owner or partner with an active theme share)
 			if asset, err := a.repo.GetThemeAsset(ctx, profile.SelectedBackgroundAssetID); err == nil && asset.Status == "active" {
-				if asset.OwnerUserID == userID && a.objectStore != nil {
+				if a.canUseUploadedBackground(ctx, userID, asset) && a.objectStore != nil {
 					bgBytes, _ = a.objectStore.Get(ctx, asset.MinioObjectKey)
 				}
 			}

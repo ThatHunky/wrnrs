@@ -214,6 +214,7 @@ type fakeState struct {
 	completions    map[int64]GameCompletion
 	blockedActions map[string]bool
 	pairLockCalls  []int64
+	actionCounts   map[string]int
 }
 
 func newFakeState() *fakeState {
@@ -249,11 +250,16 @@ func (s *fakeState) ClearPendingGameCompletion(_ context.Context, userID int64) 
 	return nil
 }
 
-func (s *fakeState) AllowUserAction(_ context.Context, _ int64, action string, _ int, _ time.Duration) (bool, error) {
+func (s *fakeState) AllowUserAction(_ context.Context, userID int64, action string, limit int, _ time.Duration) (bool, error) {
 	if s.blockedActions[action] {
 		return false, nil
 	}
-	return true, nil
+	if s.actionCounts == nil {
+		s.actionCounts = map[string]int{}
+	}
+	key := fmt.Sprintf("%d:%s", userID, action)
+	s.actionCounts[key]++
+	return s.actionCounts[key] <= limit, nil
 }
 
 func (s *fakeState) WithPairLock(_ context.Context, pairID int64, _ time.Duration, fn func() error) error {
@@ -2704,6 +2710,39 @@ func TestStyleParameterOverrides(t *testing.T) {
 	}
 }
 
+func TestPartnerSharedBackgroundIsFetchedForNonOwnerRender(t *testing.T) {
+	app, _, _ := newTestApp(t)
+	ctx := context.Background()
+	pair := pairUsersForGame(t, app)
+
+	const assetID = "upload_1001_shared"
+	const objectKey = "custom/1001-shared.webp"
+	wantBytes := []byte("partner-shared-background-bytes")
+
+	if err := app.repo.CreateThemeAsset(ctx, assetID, 1001, objectKey, int64(len(wantBytes)), 100, 100); err != nil {
+		t.Fatalf("CreateThemeAsset: %v", err)
+	}
+	store := app.objectStore.(*fakeObjectStore)
+	if err := store.Put(ctx, objectKey, "image/webp", wantBytes); err != nil {
+		t.Fatalf("store.Put: %v", err)
+	}
+	if err := app.repo.CreatePairThemeShare(ctx, pair.ID, assetID, 1001); err != nil {
+		t.Fatalf("CreatePairThemeShare: %v", err)
+	}
+	// Partner (2002) selects the shared asset, mirroring the "theme:bg:select:" callback.
+	if err := app.repo.UpdateUserBackground(ctx, 2002, assetID); err != nil {
+		t.Fatalf("UpdateUserBackground: %v", err)
+	}
+
+	input, err := app.themeCardInput(ctx, 2002, "en")
+	if err != nil {
+		t.Fatalf("themeCardInput: %v", err)
+	}
+	if string(input.BackgroundBytes) != string(wantBytes) {
+		t.Fatalf("expected non-owner render to fetch the shared background bytes, got %q (len %d)", input.BackgroundBytes, len(input.BackgroundBytes))
+	}
+}
+
 func testPhotoMessage(userID int64, fileID string) *telegram.Message {
 	msg := testMessageFrom(userID, "tester", "en", "")
 	msg.Photo = []telegram.PhotoSize{
@@ -2808,6 +2847,61 @@ func TestBackgroundUploadAndLimit(t *testing.T) {
 	}
 	if profile.SelectedBackgroundAssetID != "" {
 		t.Fatalf("expected selected background to be reset to empty, got %q", profile.SelectedBackgroundAssetID)
+	}
+}
+
+// TestFiveTapThenUploadCyclesFitWithinTheUploadRateLimit proves that showing
+// the upload prompt (the "theme:bg:upload" callback) does not spend a token
+// from the same "upload" rate-limit bucket that a real upload spends. Five
+// full tap-then-upload cycles must fit inside the 5-per-hour window; with the
+// old shared-bucket bug each cycle cost two tokens, so this would previously
+// fail well before the fifth upload.
+func TestFiveTapThenUploadCyclesFitWithinTheUploadRateLimit(t *testing.T) {
+	app, bot, state := newTestApp(t)
+	ctx := context.Background()
+	completeUkrainianOnboarding(t, app)
+
+	for i := 1; i <= 5; i++ {
+		// Delete the previous upload first so we stay under the 3-asset cap
+		// and only the rate limiter is being exercised.
+		if i > 1 {
+			profile, err := app.repo.UserProfile(ctx, 1001)
+			if err != nil {
+				t.Fatalf("cycle %d: UserProfile: %v", i, err)
+			}
+			if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testCallback("theme:bg:delete_confirm:" + profile.SelectedBackgroundAssetID)}); err != nil {
+				t.Fatalf("cycle %d: delete callback failed: %v", i, err)
+			}
+		}
+
+		// Tap the upload button to show the prompt.
+		if err := app.HandleUpdate(ctx, telegram.Update{CallbackQuery: testCallback("theme:bg:upload")}); err != nil {
+			t.Fatalf("cycle %d: bg upload callback failed: %v", i, err)
+		}
+		lastEdit := bot.edits[len(bot.edits)-1]
+		if strings.Contains(lastEdit.text, "Забагато") || strings.Contains(lastEdit.text, "ліміту") {
+			t.Fatalf("cycle %d: unexpected rate limit / asset limit on prompt: %q", i, lastEdit.text)
+		}
+		if got := state.values[1001]; got != string(onboarding.StepBackground) {
+			t.Fatalf("cycle %d: expected FSM StepBackground, got %q", i, got)
+		}
+
+		// Upload the actual file.
+		beforeMsgs := len(bot.messages)
+		photoMsg := testPhotoMessage(1001, fmt.Sprintf("photo_cycle_%d", i))
+		if err := app.HandleUpdate(ctx, telegram.Update{Message: photoMsg}); err != nil {
+			t.Fatalf("cycle %d: handle photo failed: %v", i, err)
+		}
+		if len(bot.messages) == beforeMsgs {
+			t.Fatalf("cycle %d: expected a response message", i)
+		}
+		lastMsg := bot.messages[len(bot.messages)-1]
+		if strings.Contains(lastMsg.text, "Забагато") {
+			t.Fatalf("cycle %d: real upload was rate limited: %q", i, lastMsg.text)
+		}
+		if !strings.Contains(lastMsg.text, "завантажено") {
+			t.Fatalf("cycle %d: expected success message, got %q", i, lastMsg.text)
+		}
 	}
 }
 
