@@ -200,3 +200,12 @@ CREATE TABLE IF NOT EXISTS pair_position_marks (
 	updated_at   TIMESTAMP NOT NULL,
 	PRIMARY KEY (pair_id, position_id)
 );
+
+CREATE TABLE IF NOT EXISTS wish_answers (
+    user_id     INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+    item_kind   TEXT    NOT NULL CHECK (item_kind IN ('wish', 'position')),
+    item_id     TEXT    NOT NULL,
+    answer      TEXT    NOT NULL CHECK (answer IN ('want', 'curious', 'no')),
+    answered_at TIMESTAMP NOT NULL,
+    PRIMARY KEY (user_id, item_kind, item_id)
+);
