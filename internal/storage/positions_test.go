@@ -131,3 +131,104 @@ func TestMarksAreSharedAcrossThePairNotPerUser(t *testing.T) {
 		t.Fatal("the second partner does not see the mark set by the first")
 	}
 }
+
+func TestTogglePositionMarkRejectsInvalidKinds(t *testing.T) {
+	repo, pairID := newRepoWithPair(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	tests := []struct {
+		name string
+		kind storage.PositionMarkKind
+	}{
+		{"arbitrary string", storage.PositionMarkKind("nonexistent")},
+		{"empty string", storage.PositionMarkKind("")},
+		{"SQL fragment", storage.PositionMarkKind("tried_at = 1, favorited_at")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := repo.TogglePositionMark(ctx, pairID, "attack-pos", tt.kind, 1001, now)
+			if err == nil {
+				t.Fatal("TogglePositionMark returned nil error for invalid kind, want non-nil")
+			}
+
+			// Verify no row was created by checking the marks are empty
+			marks, err := repo.PairPositionMarks(ctx, pairID)
+			if err != nil {
+				t.Fatalf("PairPositionMarks: %v", err)
+			}
+			if len(marks) != 0 {
+				t.Fatalf("expected no marks to be persisted, but got %d marks: %+v", len(marks), marks)
+			}
+		})
+	}
+}
+
+func TestPositionMarkssurviveEndActivePair(t *testing.T) {
+	repo, pairID := newRepoWithPair(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// Set a mark on a position
+	if _, err := repo.TogglePositionMark(ctx, pairID, "position-123", storage.MarkFavorited, 1001, now); err != nil {
+		t.Fatalf("TogglePositionMark: %v", err)
+	}
+
+	// Verify the mark exists
+	marksBefore, err := repo.PairPositionMarks(ctx, pairID)
+	if err != nil {
+		t.Fatalf("PairPositionMarks before end: %v", err)
+	}
+	if !marksBefore["position-123"].FavoritedAt.Valid {
+		t.Fatal("mark was not persisted before ending pair")
+	}
+
+	// End the pair (via user 1001's perspective)
+	if _, err := repo.EndActivePair(ctx, 1001, now); err != nil {
+		t.Fatalf("EndActivePair: %v", err)
+	}
+
+	// Verify the mark still exists after ending the pair
+	marksAfter, err := repo.PairPositionMarks(ctx, pairID)
+	if err != nil {
+		t.Fatalf("PairPositionMarks after end: %v", err)
+	}
+	if !marksAfter["position-123"].FavoritedAt.Valid {
+		t.Fatal("mark did not survive EndActivePair")
+	}
+}
+
+func TestPositionMarksDisappearWhenUserIsDeleted(t *testing.T) {
+	repo, pairID := newRepoWithPair(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// Set a mark on a position
+	if _, err := repo.TogglePositionMark(ctx, pairID, "position-456", storage.MarkHidden, 1001, now); err != nil {
+		t.Fatalf("TogglePositionMark: %v", err)
+	}
+
+	// Verify the mark exists
+	marksBefore, err := repo.PairPositionMarks(ctx, pairID)
+	if err != nil {
+		t.Fatalf("PairPositionMarks before delete: %v", err)
+	}
+	if !marksBefore["position-456"].HiddenAt.Valid {
+		t.Fatal("mark was not persisted before deleting user")
+	}
+
+	// Delete one of the users (which cascades to pairs and their marks)
+	if err := repo.DeleteUser(ctx, 1001); err != nil {
+		t.Fatalf("DeleteUser: %v", err)
+	}
+
+	// Verify the marks for this pair are gone
+	marksAfter, err := repo.PairPositionMarks(ctx, pairID)
+	if err != nil {
+		t.Fatalf("PairPositionMarks after delete: %v", err)
+	}
+	if len(marksAfter) != 0 {
+		t.Fatalf("marks should be gone after user deletion, but got %d marks: %+v", len(marksAfter), marksAfter)
+	}
+}
