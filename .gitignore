@@ -17,3 +17,8 @@ worktrees/
 # Session transcripts and agent scratch — not source
 .specstory/
 .superpowers/
+
+# ingest-positions crawl output — never committed
+positions-images/
+ingest-progress.json
+review.json
