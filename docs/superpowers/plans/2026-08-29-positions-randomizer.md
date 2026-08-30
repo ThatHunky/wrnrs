@@ -302,7 +302,7 @@ Expected: PASS — 4 тести.
 
 Перевір валідність JSON:
 Run: `python3 -c "import json; d=json.load(open('content/positions.taxonomy.json')); print(len(d['slugs']), 'slugs')"`
-Expected: `43 slugs`
+Expected: `44 slugs`
 
 - [ ] **Step 5: Commit**
 
