@@ -795,7 +795,7 @@ git commit -m "feat(wishlist): add the I/O-free queue and progress logic"
   - `wishlist.SwipeCaption(bundle *i18n.Bundle, language string, item catalog.Item, answered, total int) string`
   - `wishlist.BackKeyboard(language string) telegram.InlineKeyboardMarkup`
 
-Колбеки: `wish:open`, `wish:next`, `wish:answer:{kind}:{id}:{answer}`, `wish:matches`, `wish:mine`. Найдовший реальний — `wish:answer:position:519:curious` = 30 байт, добре в межах 64.
+Колбеки: `wish:open`, `wish:next`, `wish:answer:{kind}:{id}:{answer}`, `wish:matches`, `wish:mine`. Найдовший реальний — `wish:answer:position:519:curious` = 32 байти, добре в межах 64.
 
 i18n-ключі (додати в **обидва** файли):
 
