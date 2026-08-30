@@ -166,7 +166,7 @@ func run(logger *slog.Logger) error {
 	} else if err := positionsCatalog.Validate([]string{"uk", "en"}); err != nil {
 		logger.Warn("positions catalog invalid; module disabled", "err", err)
 	} else {
-		positionsHandler := positions.NewHandler(buildPositionsHandlerOptions(
+		positionsOptions := buildPositionsHandlerOptions(
 			positions.NewService(positions.ServiceOptions{Catalog: positionsCatalog}),
 			positionsCatalog,
 			repo,
@@ -174,7 +174,16 @@ func run(logger *slog.Logger) error {
 			redisStore,
 			positionsStore,
 			bundle,
-		))
+		)
+		// buildPositionsHandlerOptions is pinned by objectstore_test.go at
+		// its current arity, so Prefix is set here instead of threading it
+		// through that helper: it is the runtime read-path counterpart of
+		// the POSITIONS_PREFIX seedCatalog already writes with (see
+		// cmd/ingest-positions/main.go), letting positions.Handler compose
+		// the same object key instead of trusting the catalog's baked-in
+		// media.key verbatim.
+		positionsOptions.Prefix = cfg.PositionsPrefix
+		positionsHandler := positions.NewHandler(positionsOptions)
 		if err := application.Registry().Register(modules.Module{
 			ID:             "positions",
 			TitleKey:       "module.positions",

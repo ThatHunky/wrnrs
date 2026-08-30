@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -95,6 +96,18 @@ type HandlerOptions struct {
 	// DumpInterval throttles the bulk send. Defaults to defaultDumpPeriod
 	// when zero.
 	DumpInterval time.Duration
+	// Prefix is the object-store key prefix this handler reads position
+	// images from — the runtime counterpart of POSITIONS_PREFIX, which
+	// cmd/ingest-positions's seedCatalog already uses to compose the upload
+	// key as prefix+path.Base(item.Media.Key) (no separator inserted: the
+	// prefix is expected to carry its own trailing slash, exactly like
+	// POSITIONS_PREFIX's default "positions/"). Left empty (the zero value),
+	// the handler falls back to trusting Media.Key verbatim, which is this
+	// handler's behaviour from before this field existed — so a deployment
+	// that never wires it is unaffected. Set it to make the read side agree
+	// with a POSITIONS_PREFIX override instead of silently reading from the
+	// wrong place.
+	Prefix string
 	// Now is injected for tests; defaults to time.Now.
 	Now func() time.Time
 }
@@ -111,6 +124,7 @@ type Handler struct {
 	objectStore  ObjectStore
 	i18n         *i18n.Bundle
 	dumpInterval time.Duration
+	prefix       string
 	now          func() time.Time
 
 	filterFacets []FacetOption
@@ -162,6 +176,7 @@ func NewHandler(options HandlerOptions) *Handler {
 		objectStore:  options.ObjectStore,
 		i18n:         options.I18n,
 		dumpInterval: interval,
+		prefix:       options.Prefix,
 		now:          now,
 		filterFacets: collectFacetOptions(options.Catalog, curatedFilterFacets),
 		runs:         map[int64]*dumpRun{},
@@ -706,6 +721,23 @@ func (h *Handler) cacheFileID(ctx context.Context, itemID, fileID string) {
 	_ = h.state.CacheFileID(ctx, "positions:"+itemID, fileID, fileIDCacheTTL)
 }
 
+// mediaObjectKey resolves the object-store key for item's media. It exists
+// so this handler never trusts the media.key baked into the catalog JSON at
+// crawl time when a configured Prefix says otherwise — see HandlerOptions.
+// Prefix's doc comment for why. An empty h.prefix (the zero value) returns
+// item.Media.Key verbatim, which is what every caller here did before this
+// method existed. A non-empty h.prefix instead takes just the file's base
+// name from item.Media.Key and joins it directly onto the prefix — no
+// separator inserted — which is exactly how cmd/ingest-positions's
+// seedCatalog composes the same key on write (objectKey := prefix + base).
+// Callers of this method already guard item.Media != nil.
+func (h *Handler) mediaObjectKey(item catalog.Item) string {
+	if h.prefix == "" {
+		return item.Media.Key
+	}
+	return h.prefix + path.Base(item.Media.Key)
+}
+
 // presentCard renders one photo card, reusing a cached file_id whenever
 // possible so the same image is never uploaded to Telegram twice. If the
 // object store is unavailable (nil) or the item carries no media, it
@@ -729,7 +761,7 @@ func (h *Handler) presentCard(ctx context.Context, cb *telegram.CallbackQuery, c
 	}
 
 	if h.objectStore != nil && item.Media != nil {
-		if data, err := h.objectStore.Get(ctx, item.Media.Key); err == nil {
+		if data, err := h.objectStore.Get(ctx, h.mediaObjectKey(item)); err == nil {
 			if sent, err := h.bot.SendPhotoBytes(ctx, chatID, data, caption, markup); err == nil {
 				h.cacheFileID(ctx, item.ID, sent.FileID)
 				h.deleteStale(ctx, cb, chatID)
@@ -751,7 +783,7 @@ func (h *Handler) sendDumpItem(ctx context.Context, chatID int64, item catalog.I
 		}
 	}
 	if h.objectStore != nil && item.Media != nil {
-		if data, err := h.objectStore.Get(ctx, item.Media.Key); err == nil {
+		if data, err := h.objectStore.Get(ctx, h.mediaObjectKey(item)); err == nil {
 			if sent, err := h.bot.SendPhotoBytes(ctx, chatID, data, caption, nil); err == nil {
 				h.cacheFileID(ctx, item.ID, sent.FileID)
 				return nil

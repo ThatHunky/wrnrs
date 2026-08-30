@@ -100,6 +100,98 @@ func (m *memStateStore) ModuleState(_ context.Context, userID int64, _ string) (
 func (m *memStateStore) CacheFileID(context.Context, string, string, time.Duration) error { return nil }
 func (m *memStateStore) FileID(context.Context, string) (string, error)                   { return "", nil }
 
+// recordingObjectStore is a minimal ObjectStore that records every key
+// requested via Get and always returns a small fixed payload, so a test can
+// assert exactly which object-store key the handler asked for without
+// needing a real MinIO, and so presentCard's cache-miss ladder proceeds all
+// the way to SendPhotoBytes instead of falling back to a text-only screen.
+type recordingObjectStore struct {
+	keys []string
+}
+
+func (o *recordingObjectStore) Get(_ context.Context, objectKey string) ([]byte, error) {
+	o.keys = append(o.keys, objectKey)
+	return []byte("fake-image-bytes"), nil
+}
+
+// mediaCatalog builds a one-item catalog whose media key matches exactly
+// what a real crawl produces: content/positions.v1.json stores
+// "positions/NNN.png", baked in at crawl time by cmd/ingest-positions.
+func mediaCatalog(id, mediaKey string) *catalog.Catalog {
+	return &catalog.Catalog{
+		Kind:    "positions",
+		Version: 1,
+		Items: []catalog.Item{
+			{
+				ID:    id,
+				Text:  map[string]catalog.ItemText{"uk": {Title: "Позиція " + id}},
+				Media: &catalog.MediaRef{Key: mediaKey},
+			},
+		},
+	}
+}
+
+// TestPresentCardComposesKeyFromConfiguredPrefix pins the fix for the
+// documented follow-up that positions.Handler trusted the catalog's
+// baked-in media.key verbatim instead of composing it from the configured
+// prefix. cmd/ingest-positions's seedCatalog writes uploads under
+// POSITIONS_PREFIX + the image's file name (see cmd/ingest-positions/
+// main.go's seedCatalog and objectKey); this pins that the handler's read
+// path now asks the object store for that exact same key rather than for
+// the catalog's baked-in "positions/007.png" — the bug this fix closes.
+func TestPresentCardComposesKeyFromConfiguredPrefix(t *testing.T) {
+	cat := mediaCatalog("007", "positions/007.png")
+	bot := &recordingBot{}
+	store := &recordingObjectStore{}
+	h := positions.NewHandler(positions.HandlerOptions{
+		Service:     positions.NewService(positions.ServiceOptions{Catalog: cat}),
+		Catalog:     cat,
+		Repository:  noPairRepo{},
+		Bot:         bot,
+		State:       newMemStateStore(),
+		ObjectStore: store,
+		I18n:        i18n.NewBundle(),
+		Prefix:      "custom/dir/",
+	})
+
+	cb := &telegram.CallbackQuery{From: telegram.User{ID: 1}, Data: "pos:browse:0"}
+	if err := h.HandleCallback(context.Background(), cb); err != nil {
+		t.Fatalf("HandleCallback pos:browse:0: %v", err)
+	}
+
+	if len(store.keys) != 1 || store.keys[0] != "custom/dir/007.png" {
+		t.Fatalf("object store keys = %v, want exactly [\"custom/dir/007.png\"]", store.keys)
+	}
+}
+
+// TestPresentCardEmptyPrefixKeepsMediaKeyVerbatim pins the other half of the
+// same fix: an unconfigured Prefix (the zero value, e.g. an older deployment
+// that never sets it) must keep reading the catalog's baked-in media.key
+// unchanged, so existing deployments are unaffected by this change.
+func TestPresentCardEmptyPrefixKeepsMediaKeyVerbatim(t *testing.T) {
+	cat := mediaCatalog("007", "positions/007.png")
+	bot := &recordingBot{}
+	store := &recordingObjectStore{}
+	h := positions.NewHandler(positions.HandlerOptions{
+		Service:     positions.NewService(positions.ServiceOptions{Catalog: cat}),
+		Catalog:     cat,
+		Repository:  noPairRepo{},
+		Bot:         bot,
+		State:       newMemStateStore(),
+		ObjectStore: store,
+		I18n:        i18n.NewBundle(),
+	})
+
+	cb := &telegram.CallbackQuery{From: telegram.User{ID: 1}, Data: "pos:browse:0"}
+	if err := h.HandleCallback(context.Background(), cb); err != nil {
+		t.Fatalf("HandleCallback pos:browse:0: %v", err)
+	}
+
+	if len(store.keys) != 1 || store.keys[0] != "positions/007.png" {
+		t.Fatalf("object store keys = %v, want exactly [\"positions/007.png\"]", store.keys)
+	}
+}
+
 // manyPositionItems builds a catalog with n uniquely-titled items and no
 // media, so every card renders as a distinct text-only message.
 func manyPositionItems(n int) *catalog.Catalog {
