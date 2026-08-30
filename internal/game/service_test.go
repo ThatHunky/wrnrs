@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -257,6 +259,61 @@ func TestServiceSelectsCustomQuestionAndKeepsSnapshotAfterDeletion(t *testing.T)
 	}
 	if !revealed.Revealed {
 		t.Fatal("custom question session did not reveal")
+	}
+}
+
+// TestServiceDoesNotReserveCustomQuestionAfterLevelAdvance guards against a
+// regression where selectNextCard re-derived a custom question's level from
+// pair.ActiveLevel on every call instead of using the level it was fixed at
+// creation time. pair_card_history has no level-independent key for custom
+// questions, so a question completed at level 1 would look "unseen" again
+// the moment the pair advanced to level 2 and would be served forever,
+// silently dropped from history by INSERT OR IGNORE on top of that. With
+// the fix, a custom question created at level 1 must never be offered once
+// the pair is at level 2.
+func TestServiceDoesNotReserveCustomQuestionAfterLevelAdvance(t *testing.T) {
+	ctx := context.Background()
+	// Deliberately no stock deck cards: the only candidate card at any level
+	// is the level-1 custom question, so if it leaks into level 2 it will
+	// deterministically be re-served there (no random shuffle can hide the
+	// bug behind an alternate card). If it correctly stays pinned to level
+	// 1, level 2 has zero eligible cards and Start must fail with
+	// ErrNoEligibleCards instead.
+	svc, repo, _, _ := newServiceFixture(t, nil)
+
+	// Created while the pair is at level 1 (set up by newServiceFixture), so
+	// it must be pinned to level 1.
+	customID, err := repo.CreateCustomQuestion(ctx, 1001, "What small ritual should we protect?")
+	if err != nil {
+		t.Fatalf("CreateCustomQuestion returned error: %v", err)
+	}
+
+	pending, err := svc.Start(ctx, 1001)
+	if err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	if pending.Card.ID != fmt.Sprintf("custom:%d", customID) {
+		t.Fatalf("pending card = %#v, want the level-1 custom question", pending.Card)
+	}
+	started, err := svc.Accept(ctx, 2002, pending.Session.ID)
+	if err != nil {
+		t.Fatalf("Accept returned error: %v", err)
+	}
+	if _, err := svc.Submit(ctx, 1001, started.Session.ID, game.CompletionSkip, ""); err != nil {
+		t.Fatalf("first Submit returned error: %v", err)
+	}
+	if _, err := svc.Submit(ctx, 2002, started.Session.ID, game.CompletionSkip, ""); err != nil {
+		t.Fatalf("second Submit returned error: %v", err)
+	}
+
+	// Force the pair to level 2, the way advanceLevelIfReady eventually
+	// would, without needing to grind through the unlock threshold.
+	if err := repo.UpdatePairLevel(ctx, started.Pair.ID, 2); err != nil {
+		t.Fatalf("UpdatePairLevel returned error: %v", err)
+	}
+
+	if _, err := svc.Next(ctx, 1001, started.Session.ID); !errors.Is(err, game.ErrNoEligibleCards) {
+		t.Fatalf("Next at level 2 returned err=%v, want ErrNoEligibleCards because the level-1 custom question must not be re-served", err)
 	}
 }
 

@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS pairs (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS pairs_unique_users_idx
-	ON pairs(user_a_id, user_b_id);
+	ON pairs(user_a_id, user_b_id)
+	WHERE status = 'active';
 
 CREATE UNIQUE INDEX IF NOT EXISTS pairs_one_active_user_a_idx
 	ON pairs(user_a_id)
@@ -182,6 +183,7 @@ CREATE TABLE IF NOT EXISTS custom_questions (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	creator_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
 	question_text TEXT NOT NULL,
+	level INTEGER NOT NULL DEFAULT 1,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	deleted_at TEXT
 );

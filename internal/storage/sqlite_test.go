@@ -3,6 +3,8 @@ package storage_test
 import (
 	"context"
 	"database/sql"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -294,5 +296,142 @@ func TestCustomQuestions(t *testing.T) {
 	}
 	if len(list) != 0 {
 		t.Fatalf("expected 0 questions after deletion, got %d", len(list))
+	}
+}
+
+// TestCoupleCanRePairAfterBreakingUp guards against a regression of
+// pairs_unique_users_idx being declared without "WHERE status = 'active'".
+// EndActivePair keeps the ended row around (status = 'ended') rather than
+// deleting it, and AcceptPairRequest is a plain INSERT with no ON CONFLICT
+// handling, so an unscoped unique index on (user_a_id, user_b_id) makes the
+// second pairing hit "UNIQUE constraint failed" forever - the same two
+// people could never get back together. Against the fixed, status-scoped
+// index this must succeed.
+func TestCoupleCanRePairAfterBreakingUp(t *testing.T) {
+	ctx := context.Background()
+	db, err := storage.OpenSQLite(ctx, ":memory:")
+	if err != nil {
+		t.Fatalf("OpenSQLite returned error: %v", err)
+	}
+	defer db.Close()
+
+	repo := storage.NewRepository(db)
+	for _, user := range []storage.User{
+		{TelegramID: 1001, Username: "alice", DisplayName: "Alice", Language: "en", ThemeBaseColor: "#d98c9f", SelectedStyleID: "default_warm"},
+		{TelegramID: 2002, Username: "bob", DisplayName: "Bob", Language: "en", ThemeBaseColor: "#8da68f", SelectedStyleID: "default_warm"},
+	} {
+		if err := repo.UpsertUser(ctx, user); err != nil {
+			t.Fatalf("UpsertUser(%d) returned error: %v", user.TelegramID, err)
+		}
+	}
+
+	firstRequest, err := repo.CreatePairRequest(ctx, storage.PairRequest{
+		RequesterID: 1001,
+		InviteToken: "token-first-pairing",
+		ExpiresAt:   time.Now().UTC().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("CreatePairRequest (first) returned error: %v", err)
+	}
+	if _, err := repo.AcceptPairRequest(ctx, firstRequest.InviteToken, 2002); err != nil {
+		t.Fatalf("AcceptPairRequest (first) returned error: %v", err)
+	}
+
+	if _, err := repo.EndActivePair(ctx, 1001, time.Now().UTC()); err != nil {
+		t.Fatalf("EndActivePair returned error: %v", err)
+	}
+
+	secondRequest, err := repo.CreatePairRequest(ctx, storage.PairRequest{
+		RequesterID: 1001,
+		InviteToken: "token-second-pairing",
+		ExpiresAt:   time.Now().UTC().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("CreatePairRequest (second) returned error: %v", err)
+	}
+	if _, err := repo.AcceptPairRequest(ctx, secondRequest.InviteToken, 2002); err != nil {
+		t.Fatalf("re-pairing the same two users after breaking up failed, want success: %v", err)
+	}
+
+	pair, err := repo.ActivePairForUser(ctx, 1001)
+	if err != nil {
+		t.Fatalf("ActivePairForUser returned error: %v", err)
+	}
+	if pair == nil || pair.Status != "active" {
+		t.Fatalf("active pair after re-pairing = %#v, want an active pair", pair)
+	}
+}
+
+// TestOpenSQLiteMigratesLegacyUnscopedPairsUniqueIndex proves that an
+// existing on-disk database created before the WHERE status = 'active' fix
+// actually gets the corrected index when OpenSQLite runs against it again -
+// schemaSQL's CREATE UNIQUE INDEX IF NOT EXISTS alone cannot do this because
+// the index already exists under that name with the old definition.
+func TestOpenSQLiteMigratesLegacyUnscopedPairsUniqueIndex(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "legacy.db")
+
+	legacyDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open legacy db returned error: %v", err)
+	}
+	if _, err := legacyDB.ExecContext(ctx, `
+		CREATE TABLE pairs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_a_id INTEGER NOT NULL,
+			user_b_id INTEGER NOT NULL,
+			status TEXT NOT NULL DEFAULT 'active',
+			active_level INTEGER NOT NULL DEFAULT 1,
+			highest_unlocked_level INTEGER NOT NULL DEFAULT 1,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			ended_at TEXT,
+			CHECK(user_a_id < user_b_id)
+		)
+	`); err != nil {
+		t.Fatalf("create legacy pairs table returned error: %v", err)
+	}
+	if _, err := legacyDB.ExecContext(ctx, `
+		CREATE UNIQUE INDEX pairs_unique_users_idx
+		ON pairs(user_a_id, user_b_id)
+	`); err != nil {
+		t.Fatalf("create legacy unscoped index returned error: %v", err)
+	}
+	if err := legacyDB.Close(); err != nil {
+		t.Fatalf("close legacy db returned error: %v", err)
+	}
+
+	// Confirm the fixture actually reproduces the old, unscoped index before
+	// letting OpenSQLite anywhere near it.
+	verifyDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("reopen legacy db returned error: %v", err)
+	}
+	var legacySQL string
+	if err := verifyDB.QueryRowContext(ctx, `
+		SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'pairs_unique_users_idx'
+	`).Scan(&legacySQL); err != nil {
+		t.Fatalf("load legacy index sql returned error: %v", err)
+	}
+	if err := verifyDB.Close(); err != nil {
+		t.Fatalf("close verify db returned error: %v", err)
+	}
+	if strings.Contains(legacySQL, "WHERE") {
+		t.Fatalf("fixture index unexpectedly scoped: %s", legacySQL)
+	}
+
+	db, err := storage.OpenSQLite(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("OpenSQLite against legacy db returned error: %v", err)
+	}
+	defer db.Close()
+
+	var migratedSQL string
+	if err := db.QueryRowContext(ctx, `
+		SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'pairs_unique_users_idx'
+	`).Scan(&migratedSQL); err != nil {
+		t.Fatalf("load migrated index sql returned error: %v", err)
+	}
+	if !strings.Contains(migratedSQL, "WHERE status = 'active'") {
+		t.Fatalf("migrated pairs_unique_users_idx sql = %q, want it scoped to WHERE status = 'active'", migratedSQL)
 	}
 }

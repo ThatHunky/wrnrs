@@ -306,13 +306,22 @@ func (s *Service) selectNextCard(ctx context.Context, pair storage.Pair) (conten
 		return content.Card{}, 0, err
 	}
 	for _, custom := range customQuestions {
+		// Custom questions carry a level fixed at creation time (see
+		// CreateCustomQuestion). Only surface a question at the level it was
+		// created for: pair_card_history has no level-independent key for
+		// custom questions, so re-materialising a question at a different
+		// level than it was completed at would make it look permanently
+		// unseen and it would be served forever.
+		if custom.Level != pair.ActiveLevel {
+			continue
+		}
 		text := strings.TrimSpace(custom.QuestionText)
 		if text == "" {
 			continue
 		}
 		cards = append(cards, content.Card{
 			ID:    fmt.Sprintf("custom:%d", custom.ID),
-			Level: pair.ActiveLevel,
+			Level: custom.Level,
 			Text:  map[string]string{"uk": text, "en": text},
 			Mode:  "both_players",
 		})

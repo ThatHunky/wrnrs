@@ -153,6 +153,7 @@ type CustomQuestion struct {
 	ID           int64
 	CreatorID    int64
 	QuestionText string
+	Level        int
 	CreatedAt    time.Time
 	DeletedAt    sql.NullTime
 }
@@ -213,6 +214,7 @@ func OpenSQLite(ctx context.Context, dsn string) (*sql.DB, error) {
 	_, _ = db.ExecContext(ctx, `ALTER TABLE game_sessions ADD COLUMN question_text_en TEXT NOT NULL DEFAULT ''`)
 	_, _ = db.ExecContext(ctx, `ALTER TABLE game_sessions ADD COLUMN requires_mature_opt_in BOOLEAN NOT NULL DEFAULT 0`)
 	_, _ = db.ExecContext(ctx, `ALTER TABLE custom_questions ADD COLUMN deleted_at TEXT`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE custom_questions ADD COLUMN level INTEGER NOT NULL DEFAULT 1`)
 	if _, err := db.ExecContext(ctx, `
 		CREATE UNIQUE INDEX IF NOT EXISTS game_sessions_one_current_pair_idx
 		ON game_sessions(pair_id)
@@ -220,6 +222,25 @@ func OpenSQLite(ctx context.Context, dsn string) (*sql.DB, error) {
 	`); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("create current game session index: %w", err)
+	}
+	// pairs_unique_users_idx originally had no WHERE clause, so once a couple
+	// broke up (status = 'ended') the (user_a_id, user_b_id) tuple stayed
+	// reserved forever and they could never re-pair. schemaSQL above already
+	// declares the corrected, status-scoped definition, but CREATE INDEX IF
+	// NOT EXISTS is a no-op against a database that already has an index by
+	// that name with the old (unscoped) definition - so existing deployments
+	// need an explicit drop-and-recreate to actually pick up the fix.
+	if _, err := db.ExecContext(ctx, `DROP INDEX IF EXISTS pairs_unique_users_idx`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("drop legacy pairs unique index: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		CREATE UNIQUE INDEX IF NOT EXISTS pairs_unique_users_idx
+		ON pairs(user_a_id, user_b_id)
+		WHERE status = 'active'
+	`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("create scoped pairs unique index: %w", err)
 	}
 	return db, nil
 }
@@ -1509,10 +1530,22 @@ func (r *Repository) LastSupportPromptAt(ctx context.Context, pairID int64) (*ti
 }
 
 func (r *Repository) CreateCustomQuestion(ctx context.Context, creatorID int64, text string) (int64, error) {
+	// Custom questions are matched against pair_card_history by
+	// (pair_id, question_id, level, deck_cycle), so the level has to be
+	// fixed at creation time - otherwise selectNextCard would re-derive it
+	// from the pair's current level on every call, and a question completed
+	// at level 1 would look "unseen" again the moment the pair advances to
+	// level 2. Default to level 1 for a creator with no active pair yet.
+	level := 1
+	if pair, err := r.ActivePairForUser(ctx, creatorID); err != nil {
+		return 0, err
+	} else if pair != nil {
+		level = pair.ActiveLevel
+	}
 	res, err := r.db.ExecContext(ctx, `
-		INSERT INTO custom_questions (creator_id, question_text)
-		VALUES (?, ?)
-	`, creatorID, text)
+		INSERT INTO custom_questions (creator_id, question_text, level)
+		VALUES (?, ?, ?)
+	`, creatorID, text, level)
 	if err != nil {
 		return 0, fmt.Errorf("create custom question: %w", err)
 	}
@@ -1546,7 +1579,7 @@ func (r *Repository) GetPairCustomQuestions(ctx context.Context, userID int64) (
 	var args []any
 	if pair != nil {
 		query = `
-			SELECT id, creator_id, question_text, created_at, deleted_at
+			SELECT id, creator_id, question_text, level, created_at, deleted_at
 			FROM custom_questions
 			WHERE (creator_id = ? OR creator_id = ?)
 			  AND deleted_at IS NULL
@@ -1555,7 +1588,7 @@ func (r *Repository) GetPairCustomQuestions(ctx context.Context, userID int64) (
 		args = []any{pair.UserAID, pair.UserBID}
 	} else {
 		query = `
-			SELECT id, creator_id, question_text, created_at, deleted_at
+			SELECT id, creator_id, question_text, level, created_at, deleted_at
 			FROM custom_questions
 			WHERE creator_id = ?
 			  AND deleted_at IS NULL
@@ -1575,7 +1608,7 @@ func (r *Repository) GetPairCustomQuestions(ctx context.Context, userID int64) (
 		var q CustomQuestion
 		var createdAtStr string
 		var deletedAt sql.NullString
-		if err := rows.Scan(&q.ID, &q.CreatorID, &q.QuestionText, &createdAtStr, &deletedAt); err != nil {
+		if err := rows.Scan(&q.ID, &q.CreatorID, &q.QuestionText, &q.Level, &createdAtStr, &deletedAt); err != nil {
 			return nil, err
 		}
 		if parsed, err := time.Parse(time.RFC3339Nano, createdAtStr); err == nil {
@@ -1865,7 +1898,8 @@ CREATE TABLE IF NOT EXISTS pairs (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS pairs_unique_users_idx
-	ON pairs(user_a_id, user_b_id);
+	ON pairs(user_a_id, user_b_id)
+	WHERE status = 'active';
 
 CREATE UNIQUE INDEX IF NOT EXISTS pairs_one_active_user_a_idx
 	ON pairs(user_a_id)
@@ -2005,6 +2039,7 @@ CREATE TABLE IF NOT EXISTS custom_questions (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	creator_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
 	question_text TEXT NOT NULL,
+	level INTEGER NOT NULL DEFAULT 1,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	deleted_at TEXT
 );
