@@ -151,6 +151,43 @@ func TestDispatchModuleCallbackIgnoresUnknownPrefix(t *testing.T) {
 	}
 }
 
+func TestDispatchModuleCallbackRefusedWhenRateLimited(t *testing.T) {
+	a, bot, state := newTestApp(t)
+	ctx := context.Background()
+	handler := &recordingModuleHandler{}
+	registerTestModule(t, a, modules.Gate{}, handler)
+
+	const userID = int64(4109)
+	if err := a.repo.UpsertUser(ctx, storage.User{TelegramID: userID, DisplayName: "Тест", Language: "uk"}); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	state.blockedActions["module_callback"] = true
+
+	cb := &telegram.CallbackQuery{ID: "1", Data: "demo:open", From: telegram.User{ID: userID}}
+	handled, err := a.dispatchModuleCallback(ctx, cb, userID, "uk")
+	if err != nil {
+		t.Fatalf("dispatchModuleCallback: %v", err)
+	}
+	if !handled {
+		t.Fatal("a rate-limited callback reported not handled; it must not fall through to the main switch")
+	}
+	if len(handler.callbacks) != 0 {
+		t.Fatalf("rate-limited callback still reached the handler: %v", handler.callbacks)
+	}
+	if len(bot.messages) == 0 && len(bot.edits) == 0 {
+		t.Fatal("rate limit refusal sent nothing to the user")
+	}
+	var got string
+	if len(bot.edits) > 0 {
+		got = bot.edits[len(bot.edits)-1].text
+	} else {
+		got = bot.messages[len(bot.messages)-1].text
+	}
+	if !strings.Contains(got, "Забагато") {
+		t.Fatalf("rate-limited module callback response = %q, want the localized rate-limit message", got)
+	}
+}
+
 func TestDispatchModuleCallbackBlocksOnGateAndDoesNotReachHandler(t *testing.T) {
 	a, bot, _ := newTestApp(t)
 	ctx := context.Background()

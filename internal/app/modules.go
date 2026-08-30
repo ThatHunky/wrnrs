@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"strings"
+	"time"
 
 	"wrnrs/internal/modules"
 	"wrnrs/internal/storage"
@@ -86,6 +87,18 @@ func (a *App) dispatchModuleCallback(ctx context.Context, cb *telegram.CallbackQ
 	module, ok := a.registry.ByCallback(cb.Data)
 	if !ok {
 		return false, nil
+	}
+
+	// Module navigation (e.g. positions browsing) can fire a delete-plus-send
+	// pair of Telegram API calls per tap, so a held-down button can trip
+	// Telegram's flood control. Rate limit the same way game_callback does.
+	allowed, err := a.allowUserAction(ctx, cb.From.ID, "module_callback", 60, time.Minute)
+	if err != nil {
+		return true, err
+	}
+	if !allowed {
+		return true, a.editCallbackScreen(ctx, cb, chatID, rateLimitedText(language),
+			a.mainMenuKeyboard(ctx, cb.From.ID, language, a.userHasPair(ctx, cb.From.ID)))
 	}
 
 	// An empty gate allows unconditionally regardless of user state (see

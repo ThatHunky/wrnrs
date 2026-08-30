@@ -834,6 +834,17 @@ func (r *Repository) EndActivePair(ctx context.Context, userID int64, now time.T
 			return nil, fmt.Errorf("reset shared selected background: %w", err)
 		}
 	}
+	// A re-pair always creates a new pairs row with a new autoincrement id,
+	// so marks left behind here become permanently unreachable - not a data
+	// leak (ids are never reused) but an unbounded, implicit retention of
+	// which positions this couple tried and favourited. Ending the
+	// relationship should end that data too.
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM pair_position_marks
+		WHERE pair_id = ?
+	`, pair.ID); err != nil {
+		return nil, fmt.Errorf("delete pair position marks: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit end pair: %w", err)
 	}

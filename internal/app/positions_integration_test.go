@@ -12,6 +12,16 @@ import (
 	"wrnrs/internal/telegram"
 )
 
+// gateNeedsMatureFragment is a substring of the "gate.needs_mature" text
+// (content/i18n/uk.json) that does not appear in "gate.needs_18plus". Both
+// strings contain "18+", so asserting on that alone cannot tell the two
+// refusal reasons apart - this fragment can.
+const gateNeedsMatureFragment = "вимагає згоди"
+
+// gateNeeds18PlusFragment is a substring of the "gate.needs_18plus" text
+// that does not appear in "gate.needs_mature", for the same reason as above.
+const gateNeeds18PlusFragment = "Спочатку підтверди"
+
 func TestPositionsModuleIsBlockedWithoutMatureOptIn(t *testing.T) {
 	a, bot, _ := newTestApp(t)
 	ctx := context.Background()
@@ -31,8 +41,34 @@ func TestPositionsModuleIsBlockedWithoutMatureOptIn(t *testing.T) {
 		t.Fatalf("handleCallback: %v", err)
 	}
 
-	if !botSaidSomethingContaining(bot, "18+") {
-		t.Fatal("a user without mature opt-in was not told why the module is closed")
+	// This user confirmed 18+ but did not opt into mature content, so the
+	// gate must refuse with gate.needs_mature specifically, not gate.needs_18plus.
+	if !botSaidSomethingContaining(bot, gateNeedsMatureFragment) {
+		t.Fatal("a user without mature opt-in was not told gate.needs_mature specifically")
+	}
+}
+
+func TestPositionsModuleIsBlockedWithoutAdultConfirmation(t *testing.T) {
+	a, bot, _ := newTestApp(t)
+	ctx := context.Background()
+
+	const userID = int64(5003)
+	if err := a.repo.UpsertUser(ctx, storage.User{TelegramID: userID, DisplayName: "Тест", Language: "uk"}); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	// Neither 18+ confirmation nor mature opt-in has been set.
+
+	registerPositionsForTest(t, a)
+
+	cb := &telegram.CallbackQuery{ID: "1", Data: "pos:open", From: telegram.User{ID: userID}}
+	if err := a.handleCallback(ctx, cb); err != nil {
+		t.Fatalf("handleCallback: %v", err)
+	}
+
+	// This user has confirmed neither, so the gate must refuse with
+	// gate.needs_18plus specifically, not gate.needs_mature.
+	if !botSaidSomethingContaining(bot, gateNeeds18PlusFragment) {
+		t.Fatal("a user who has confirmed neither was not told gate.needs_18plus specifically")
 	}
 }
 

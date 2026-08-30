@@ -148,6 +148,7 @@ func (b *fakeBot) SendPhotoBytes(_ context.Context, chatID int64, _ []byte, capt
 }
 
 func (b *fakeBot) SendPhotoRef(_ context.Context, chatID int64, fileID, caption string, replyMarkup any) (telegram.SentPhoto, error) {
+	b.photos++
 	b.sentPhotos = append(b.sentPhotos, sentPhoto{chatID: chatID, caption: caption, markup: replyMarkup})
 	return telegram.SentPhoto{MessageID: 1, FileID: fileID}, nil
 }

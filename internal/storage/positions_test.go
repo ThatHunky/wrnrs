@@ -176,7 +176,19 @@ func TestTogglePositionMarkRejectsInvalidKinds(t *testing.T) {
 	}
 }
 
-func TestPositionMarksSurviveEndActivePair(t *testing.T) {
+// TestPositionMarksAreDeletedWhenPairEnds encodes a retention decision:
+// ending a relationship must end its data. This inverts what used to be
+// TestPositionMarksSurviveEndActivePair, which asserted the opposite -
+// that marks outlived the pair. That earlier assertion encoded the previous
+// (implicit, undocumented) behaviour: because a re-pair always creates a new
+// pairs row with a new autoincrement id, marks left behind after a break
+// became permanently unreachable - not a leak, since ids are never reused,
+// but an unbounded retention of which positions a couple tried and
+// favourited, indefinitely after the relationship ended. EndActivePair now
+// deletes the ended pair's pair_position_marks rows in the same transaction
+// as its other cleanups (game_sessions, pair_theme_shares), so this test
+// asserts deletion instead of survival.
+func TestPositionMarksAreDeletedWhenPairEnds(t *testing.T) {
 	repo, pairID := newRepoWithPair(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
@@ -200,13 +212,16 @@ func TestPositionMarksSurviveEndActivePair(t *testing.T) {
 		t.Fatalf("EndActivePair: %v", err)
 	}
 
-	// Verify the mark still exists after ending the pair
+	// Verify the mark is gone after ending the pair
 	marksAfter, err := repo.PairPositionMarks(ctx, pairID)
 	if err != nil {
 		t.Fatalf("PairPositionMarks after end: %v", err)
 	}
-	if !marksAfter["position-123"].FavoritedAt.Valid {
-		t.Fatal("mark did not survive EndActivePair")
+	if marksAfter["position-123"].FavoritedAt.Valid {
+		t.Fatal("mark survived EndActivePair, want it deleted along with the rest of the pair's data")
+	}
+	if len(marksAfter) != 0 {
+		t.Fatalf("marks after end = %+v, want none left for the ended pair", marksAfter)
 	}
 }
 
