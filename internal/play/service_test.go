@@ -66,6 +66,30 @@ func TestNextIncrementsDrawAndRecordsRecent(t *testing.T) {
 	}
 }
 
+// TestNextPreservesTurnB pins the other half of the "Next never flips the
+// turn" contract: TestNextIncrementsDrawAndRecordsRecent only ever calls
+// Next with TurnB false (the zero value), so an implementation that reset
+// TurnB unconditionally — e.g. built its result from a fresh zero-value
+// GameState instead of `next := state` — would pass every existing test.
+// Running both false and true closes that gap; true is the case that
+// actually exercises preservation rather than merely reproducing a zero
+// value.
+func TestNextPreservesTurnB(t *testing.T) {
+	for _, turnB := range []bool{false, true} {
+		t.Run(fmt.Sprintf("TurnB=%v", turnB), func(t *testing.T) {
+			svc := play.NewService(play.ServiceOptions{Catalog: testCatalog()})
+
+			_, state, err := svc.Next(42, play.GameState{TurnB: turnB})
+			if err != nil {
+				t.Fatalf("Next: %v", err)
+			}
+			if state.TurnB != turnB {
+				t.Fatalf("TurnB = %v, want %v; Next must not change whose turn it is", state.TurnB, turnB)
+			}
+		})
+	}
+}
+
 func TestNextAvoidsRecentCards(t *testing.T) {
 	svc := play.NewService(play.ServiceOptions{Catalog: testCatalog()})
 
