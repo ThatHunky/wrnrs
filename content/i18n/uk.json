@@ -100,6 +100,7 @@
     "gate.needs_mature": "Цей розділ вимагає згоди на контент 18+. Увімкни її в налаштуваннях.",
     "gate.needs_pair": "Спочатку створи пару — цей розділ для двох.",
     "gate.needs_premium": "Цей розділ доступний з преміумом.",
+    "module.play": "Гра",
     "module.positions": "Пози",
     "module.wishlist": "Бажання",
     "positions.hub": "Пози\n\nКрути навмання, гортай каталог або став фільтри.",
@@ -193,6 +194,19 @@
     "wish.mine.title": "Мої відповіді",
     "wish.mine.empty": "Ти ще нічого не відмічав.",
     "wish.privacy_note": "Твоє «ні» завжди залишається лише твоїм.",
-    "wish.item.position": "Поза №%s"
+    "wish.item.position": "Поза №%s",
+    "play.hub.title": "Правда або дія",
+    "play.hub.intro": "Тягніть картки по черзі — бот сам чергує, кому випадає.",
+    "play.hub.solo_hint": "Коли зʼявиться пара, картки звертатимуться на імена.",
+    "play.next": "▶ Далі",
+    "play.skip": "⏭ Пропустити",
+    "play.filters": "☰ Фільтри",
+    "play.kind.truth": "Правда",
+    "play.kind.dare": "Дія",
+    "play.intensity.gentle": "Мʼяко",
+    "play.intensity.medium": "Середньо",
+    "play.intensity.bold": "Сміливо",
+    "play.filters.title": "Фільтри",
+    "play.empty": "За такими фільтрами карток немає. Прибери щось із фільтрів."
   }
 }

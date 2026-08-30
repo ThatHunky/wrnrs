@@ -100,6 +100,7 @@
     "gate.needs_mature": "This section needs your consent to 18+ content. Enable it in settings.",
     "gate.needs_pair": "Create a pair first — this section is for two.",
     "gate.needs_premium": "This section is available with premium.",
+    "module.play": "Play",
     "module.positions": "Positions",
     "module.wishlist": "Wishes",
     "positions.hub": "Positions\n\nSpin the randomiser, browse the catalog, or set filters.",
@@ -193,6 +194,19 @@
     "wish.mine.title": "My answers",
     "wish.mine.empty": "You haven't marked anything yet.",
     "wish.privacy_note": "Your \"no\" always stays private.",
-    "wish.item.position": "Position #%s"
+    "wish.item.position": "Position #%s",
+    "play.hub.title": "Truth or Dare",
+    "play.hub.intro": "Draw cards in turn — the bot decides whose turn it is.",
+    "play.hub.solo_hint": "Once you have a partner, cards will address you by name.",
+    "play.next": "▶ Next",
+    "play.skip": "⏭ Skip",
+    "play.filters": "☰ Filters",
+    "play.kind.truth": "Truth",
+    "play.kind.dare": "Dare",
+    "play.intensity.gentle": "Gentle",
+    "play.intensity.medium": "Medium",
+    "play.intensity.bold": "Bold",
+    "play.filters.title": "Filters",
+    "play.empty": "Nothing matches these filters. Try removing one."
   }
 }
