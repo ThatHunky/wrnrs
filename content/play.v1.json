@@ -1,0 +1,1686 @@
+{
+  "kind": "play",
+  "version": 1,
+  "items": [
+    {
+      "id": "p001",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Small habit",
+          "body": "What's a small thing I do that you never get tired of?"
+        },
+        "uk": {
+          "title": "Дрібна звичка",
+          "body": "Що я роблю щодня таке дрібне, що тобі це ніколи не набридає?"
+        }
+      }
+    },
+    {
+      "id": "p002",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Growing old together",
+          "body": "What's something you look forward to about getting older with me?"
+        },
+        "uk": {
+          "title": "Старіти разом",
+          "body": "Чого ти найбільше чекаєш від того, що ми старітимемо разом?"
+        }
+      }
+    },
+    {
+      "id": "p003",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A moment to freeze",
+          "body": "What's a moment this year you wished you could freeze in time?"
+        },
+        "uk": {
+          "title": "Зупинена мить",
+          "body": "Яку мить цього року тобі хотілося б зупинити назавжди?"
+        }
+      }
+    },
+    {
+      "id": "p004",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "The most 'us' place",
+          "body": "What's the place in our home that feels the most 'us' to you?"
+        },
+        "uk": {
+          "title": "Найбільш «наше» місце",
+          "body": "Яке місце в нашому домі здається тобі найбільш «нашим»?"
+        }
+      }
+    },
+    {
+      "id": "p005",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "The untold day",
+          "body": "What's something about your day you never think to tell me?"
+        },
+        "uk": {
+          "title": "Непроговорений день",
+          "body": "Що з твого дня ти майже ніколи мені не розповідаєш?"
+        }
+      }
+    },
+    {
+      "id": "p006",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Wanted words",
+          "body": "What's a compliment you've wanted to hear from me more often?"
+        },
+        "uk": {
+          "title": "Бажані слова",
+          "body": "Який комплімент тобі хочеться чути від мене частіше?"
+        }
+      }
+    },
+    {
+      "id": "p007",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Proud of us",
+          "body": "When do you feel most proud of us as a couple?"
+        },
+        "uk": {
+          "title": "Пишатися нами",
+          "body": "Коли ти найбільше пишаєшся тим, які ми пара?"
+        }
+      }
+    },
+    {
+      "id": "p008",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Tomorrow's gift",
+          "body": "What's a small thing I could do tomorrow that would make your day better?"
+        },
+        "uk": {
+          "title": "Завтрашній подарунок",
+          "body": "Що дрібне я міг би зробити завтра, щоб твій день став кращим?"
+        }
+      }
+    },
+    {
+      "id": "p009",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Lessons on love",
+          "body": "What did you learn about love from your parents that you kept, or refused to repeat?"
+        },
+        "uk": {
+          "title": "Урок про кохання",
+          "body": "Чого про кохання тебе навчили батьки і що з цього ти свідомо не повторюєш?"
+        }
+      }
+    },
+    {
+      "id": "p010",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Before it was serious",
+          "body": "What's a memory of us from before we were serious that still makes you smile?"
+        },
+        "uk": {
+          "title": "До того, як стало серйозно",
+          "body": "Який спогад про нас із часів, коли все ще не було серйозно, досі змушує тебе усміхатися?"
+        }
+      }
+    },
+    {
+      "id": "p011",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Undeserved credit",
+          "body": "What do you think I don't give myself enough credit for?"
+        },
+        "uk": {
+          "title": "Недооцінене в собі",
+          "body": "За що, на твою думку, я себе недооцінюю?"
+        }
+      }
+    },
+    {
+      "id": "p012",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "An early fear",
+          "body": "What's a fear you had about this relationship early on that turned out to be wrong?"
+        },
+        "uk": {
+          "title": "Ранній страх",
+          "body": "Який твій ранній страх щодо нас зрештою виявився марним?"
+        }
+      }
+    },
+    {
+      "id": "p013",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "The ordinary thing",
+          "body": "What's something ordinary we do together that you'd miss most if it stopped?"
+        },
+        "uk": {
+          "title": "Звичайна річ",
+          "body": "Яку звичайну спільну справу ти б найбільше сумував, якби вона зникла?"
+        }
+      }
+    },
+    {
+      "id": "p014",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Our private joke",
+          "body": "What's a nickname or private joke of ours you never want us to lose?"
+        },
+        "uk": {
+          "title": "Наш жарт для двох",
+          "body": "Яке наше прізвисько чи жарт для двох ти б хотів зберегти назавжди?"
+        }
+      }
+    },
+    {
+      "id": "p015",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Unspoken signal",
+          "body": "What do I do without noticing that tells you how I'm feeling?"
+        },
+        "uk": {
+          "title": "Мимовільний знак",
+          "body": "Що я роблю несвідомо, що видає тобі мій настрій?"
+        }
+      }
+    },
+    {
+      "id": "p016",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Unspoken need",
+          "body": "What's something you needed from me during a hard time that you never asked for directly?"
+        },
+        "uk": {
+          "title": "Непроговорена потреба",
+          "body": "Чого тобі бракувало від мене у важкий період, але ти так і не попросив прямо?"
+        }
+      }
+    },
+    {
+      "id": "p017",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "The lingering compromise",
+          "body": "What's a compromise in this relationship that still costs you something?"
+        },
+        "uk": {
+          "title": "Компроміс, що болить",
+          "body": "Який компроміс у наших стосунках досі щось у тебе забирає?"
+        }
+      }
+    },
+    {
+      "id": "p018",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Truly seen",
+          "body": "When did you last feel truly seen by me, and what was happening?"
+        },
+        "uk": {
+          "title": "Справді поміченим",
+          "body": "Коли ти востаннє відчув, що я тебе справді бачу, і що тоді відбувалося?"
+        }
+      }
+    },
+    {
+      "id": "p019",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "The argument that stayed",
+          "body": "What's an argument of ours you still think about, even though it's resolved?"
+        },
+        "uk": {
+          "title": "Сварка, що залишилась",
+          "body": "Про яку нашу сварку ти досі думаєш, хоча ми давно помирилися?"
+        }
+      }
+    },
+    {
+      "id": "p020",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Was it worth it",
+          "body": "What's something you had to change about yourself for this relationship that you still have doubts about?"
+        },
+        "uk": {
+          "title": "Чи варто було",
+          "body": "Що тобі довелося змінити в собі заради нас, у чому досі лишаються сумніви?"
+        }
+      }
+    },
+    {
+      "id": "p021",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "The silent upset",
+          "body": "What do you do when you're upset with me but don't say anything?"
+        },
+        "uk": {
+          "title": "Мовчазна образа",
+          "body": "Що ти робиш, коли ображаєшся на мене, але мовчиш про це?"
+        }
+      }
+    },
+    {
+      "id": "p022",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Better support",
+          "body": "What's a way I could support your ambitions better than I do now?"
+        },
+        "uk": {
+          "title": "Краща підтримка",
+          "body": "Як я міг би краще підтримувати твої амбіції, ніж роблю це зараз?"
+        }
+      }
+    },
+    {
+      "id": "p023",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Afraid to ask",
+          "body": "What's something you're afraid to ask me for because you think I'll say no?"
+        },
+        "uk": {
+          "title": "Страх попросити",
+          "body": "Про що ти боїшся мене попросити, бо думаєш, що я відмовлю?"
+        }
+      }
+    },
+    {
+      "id": "p024",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Distant in the room",
+          "body": "What was the last time you felt a distance between us, even while we were right next to each other?"
+        },
+        "uk": {
+          "title": "Далеко в одній кімнаті",
+          "body": "Коли востаннє між нами виникала відстань, навіть коли ми сиділи поруч?"
+        }
+      }
+    },
+    {
+      "id": "p025",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "The awkward boundary",
+          "body": "What's a boundary you've never told me about because it felt awkward to bring up?"
+        },
+        "uk": {
+          "title": "Незручна межа",
+          "body": "Про яку свою межу ти мені ніколи не казав, бо було незручно її озвучити?"
+        }
+      }
+    },
+    {
+      "id": "p026",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Quiet envy",
+          "body": "What's something you envy about another couple you know?"
+        },
+        "uk": {
+          "title": "Тиха заздрість",
+          "body": "Чому ти заздриш у якійсь знайомій вам парі?"
+        }
+      }
+    },
+    {
+      "id": "p027",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Family's shadow",
+          "body": "What's a way your family shaped how you love that you're still working through?"
+        },
+        "uk": {
+          "title": "Тінь родини",
+          "body": "Як твоя родина вплинула на те, як ти любиш, і з чим ти досі розбираєшся?"
+        }
+      }
+    },
+    {
+      "id": "p028",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Doubting yourself",
+          "body": "What's the last thing that made you doubt yourself in front of me?"
+        },
+        "uk": {
+          "title": "Сумнів у собі",
+          "body": "Що востаннє змусило тебе засумніватися в собі при мені?"
+        }
+      }
+    },
+    {
+      "id": "p029",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Forgiven, not forgotten",
+          "body": "What's an old mistake of mine you've managed to forgive, but still haven't been able to fully let go of?"
+        },
+        "uk": {
+          "title": "Пробачено, та не забуто",
+          "body": "Яку мою давню помилку тобі вдалося пробачити, але відпустити до кінця так і не вдалося?"
+        }
+      }
+    },
+    {
+      "id": "p030",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "The hidden part",
+          "body": "What's a part of yourself you hide from me on purpose, and why?"
+        },
+        "uk": {
+          "title": "Прихована частина",
+          "body": "Яку частину себе ти свідомо ховаєш від мене і чому?"
+        }
+      }
+    },
+    {
+      "id": "p031",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Unspoken fantasy",
+          "body": "What's a fantasy of yours you've never said out loud to me?"
+        },
+        "uk": {
+          "title": "Непромовлена фантазія",
+          "body": "Яку свою фантазію ти ще ніколи не озвучував мені вголос?"
+        }
+      }
+    },
+    {
+      "id": "p032",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Unintentionally hot",
+          "body": "What's the most turned on you've ever been by something I did without meaning to?"
+        },
+        "uk": {
+          "title": "Ненавмисно збудливо",
+          "body": "Коли тебе найсильніше збуджувало щось зроблене мною цілком ненавмисно?"
+        }
+      }
+    },
+    {
+      "id": "p033",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Wanting more",
+          "body": "What's something in bed you want more of but haven't asked for?"
+        },
+        "uk": {
+          "title": "Хочеться більшого",
+          "body": "Чого тобі хочеться більше в ліжку, але ти про це ще не попросив?"
+        }
+      }
+    },
+    {
+      "id": "p034",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Most wanted",
+          "body": "What's a moment that showed you just how much I want you?"
+        },
+        "uk": {
+          "title": "Найбільш бажаний",
+          "body": "Яка наша мить найкраще показала тобі, наскільки сильно я тебе хочу?"
+        }
+      }
+    },
+    {
+      "id": "p035",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "No rules tonight",
+          "body": "What's the boldest thing you'd want to try with me if there were no rules tonight?"
+        },
+        "uk": {
+          "title": "Без правил цієї ночі",
+          "body": "Що найсміливіше тобі хотілося б спробувати зі мною, якби сьогодні не було жодних правил?"
+        }
+      }
+    },
+    {
+      "id": "p036",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "More attention",
+          "body": "What's something about your body you want me to pay more attention to?"
+        },
+        "uk": {
+          "title": "Більше уваги",
+          "body": "Якій частині свого тіла ти хочеш, щоб я приділяв більше уваги?"
+        }
+      }
+    },
+    {
+      "id": "p037",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "The untold secret",
+          "body": "What's the closest you've come to telling me a secret you still haven't told?"
+        },
+        "uk": {
+          "title": "Майже розказаний секрет",
+          "body": "Коли ти був найближче до того, щоб розказати мені секрет, який досі не розказав?"
+        }
+      }
+    },
+    {
+      "id": "p038",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Alone with the memory",
+          "body": "What's a memory of us that you still think about when you're alone?"
+        },
+        "uk": {
+          "title": "Наодинці зі спогадом",
+          "body": "Який наш спогад ти прокручуєш у голові, коли залишаєшся сам?"
+        }
+      }
+    },
+    {
+      "id": "p039",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Irresistible, not looks",
+          "body": "What's something you find irresistible about me that has nothing to do with looks?"
+        },
+        "uk": {
+          "title": "Не про зовнішність",
+          "body": "Що в мені для тебе неможливо встояти, і це зовсім не про зовнішність?"
+        }
+      }
+    },
+    {
+      "id": "p040",
+      "facets": {
+        "kind": [
+          "truth"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "The unsaid thought",
+          "body": "What's the last thought about me that crossed your mind but you didn't say out loud?"
+        },
+        "uk": {
+          "title": "Непромовлена думка",
+          "body": "Яка остання думка про мене промайнула в твоїй голові, але ти її не озвучив?"
+        }
+      }
+    },
+    {
+      "id": "p041",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Hold on",
+          "body": "Hold my hand and don't let go until the next card."
+        },
+        "uk": {
+          "title": "Тримай мене за руку",
+          "body": "Візьми мене за руку і не відпускай, поки не з'явиться наступна картка."
+        }
+      }
+    },
+    {
+      "id": "p042",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "New compliment",
+          "body": "Give me a compliment you have never said out loud before."
+        },
+        "uk": {
+          "title": "Новий комплімент",
+          "body": "Скажи мені комплімент, якого ти ще ніколи не промовляв уголос."
+        }
+      }
+    },
+    {
+      "id": "p043",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Guess the name",
+          "body": "Trace my name on my back with your finger and have me guess it."
+        },
+        "uk": {
+          "title": "Вгадай ім'я",
+          "body": "Напиши пальцем моє ім'я в мене на спині, а я спробую вгадати."
+        }
+      }
+    },
+    {
+      "id": "p044",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A quiet minute",
+          "body": "Rest your head on my shoulder for one full minute in silence."
+        },
+        "uk": {
+          "title": "Тиха хвилина",
+          "body": "Поклади голову мені на плече і мовчи разом зі мною цілу хвилину."
+        }
+      }
+    },
+    {
+      "id": "p045",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Thirty seconds",
+          "body": "Tell me your favorite memory of us in under thirty seconds."
+        },
+        "uk": {
+          "title": "Тридцять секунд",
+          "body": "Розкажи свій улюблений спогад про нас менш ніж за тридцять секунд."
+        }
+      }
+    },
+    {
+      "id": "p046",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Grateful kiss",
+          "body": "Kiss my forehead and tell me one thing you're grateful for today."
+        },
+        "uk": {
+          "title": "Вдячний поцілунок",
+          "body": "Поцілуй мене в чоло і скажи, за що ти вдячний сьогодні."
+        }
+      }
+    },
+    {
+      "id": "p047",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Hold the gaze",
+          "body": "Look me in the eyes for thirty seconds without speaking."
+        },
+        "uk": {
+          "title": "Не відводь погляд",
+          "body": "Дивись мені в очі тридцять секунд, не кажучи ні слова."
+        }
+      }
+    },
+    {
+      "id": "p048",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "First thing I loved",
+          "body": "Whisper the first thing you loved about me into my ear."
+        },
+        "uk": {
+          "title": "Перше, що закохало",
+          "body": "Прошепочи мені на вухо, що в мені закохало тебе першим."
+        }
+      }
+    },
+    {
+      "id": "p049",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Guess our song",
+          "body": "Hum our song and make me guess it."
+        },
+        "uk": {
+          "title": "Вгадай нашу пісню",
+          "body": "Наспівай нашу пісню, а я спробую вгадати, яка це."
+        }
+      }
+    },
+    {
+      "id": "p050",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Just look",
+          "body": "Hold my face in your hands and look at me for a moment."
+        },
+        "uk": {
+          "title": "Просто подивись",
+          "body": "Візьми моє обличчя в долоні й просто подивись на мене якусь мить."
+        }
+      }
+    },
+    {
+      "id": "p051",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Slow hug",
+          "body": "Give me a slow hug and let me decide when it ends."
+        },
+        "uk": {
+          "title": "Повільні обійми",
+          "body": "Обійми мене повільно і дай мені самому вирішити, коли відпустити."
+        }
+      }
+    },
+    {
+      "id": "p052",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Three words",
+          "body": "List three words that describe me, out loud, without stopping to think."
+        },
+        "uk": {
+          "title": "Три слова",
+          "body": "Назви вголос три слова про мене, не роздумуючи ні секунди."
+        }
+      }
+    },
+    {
+      "id": "p053",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Somewhere on my face",
+          "body": "Kiss me somewhere on my face that isn't my lips."
+        },
+        "uk": {
+          "title": "Десь на обличчі",
+          "body": "Поцілуй мене кудись в обличчя, тільки не в губи."
+        }
+      }
+    },
+    {
+      "id": "p054",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Worth remembering",
+          "body": "Tell me one thing about tonight you already want to remember."
+        },
+        "uk": {
+          "title": "Варто запам'ятати",
+          "body": "Скажи, що з цього вечора ти вже хочеш запам'ятати назавжди."
+        }
+      }
+    },
+    {
+      "id": "p055",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Breathe together",
+          "body": "Press your forehead against mine and breathe together for ten seconds."
+        },
+        "uk": {
+          "title": "Дихаємо разом",
+          "body": "Притулись чолом до мого чола і подихаймо разом десять секунд."
+        }
+      }
+    },
+    {
+      "id": "p056",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "One button",
+          "body": "Unbutton one button of my shirt slowly and tell me why you chose it."
+        },
+        "uk": {
+          "title": "Один ґудзик",
+          "body": "Повільно розстібни один ґудзик на моїй сорочці й скажи, чому обрав саме цей."
+        }
+      }
+    },
+    {
+      "id": "p057",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Your turn next",
+          "body": "Kiss my neck and tell me it's my turn next."
+        },
+        "uk": {
+          "title": "Тепер твоя черга",
+          "body": "Поцілуй мене в шию і скажи, що тепер моя черга."
+        }
+      }
+    },
+    {
+      "id": "p058",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "No hands",
+          "body": "Take off one item of my clothing without using your hands."
+        },
+        "uk": {
+          "title": "Без рук",
+          "body": "Зніми з мене одну річ одягу, не використовуючи рук."
+        }
+      }
+    },
+    {
+      "id": "p059",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Your song, your dance",
+          "body": "Give me a slow dance to a song only you get to pick."
+        },
+        "uk": {
+          "title": "Твоя пісня, твій танець",
+          "body": "Потанцюй зі мною повільно під пісню, яку обереш тільки ти."
+        }
+      }
+    },
+    {
+      "id": "p060",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Ten seconds of gaze",
+          "body": "Bite your lip and hold my gaze for ten seconds."
+        },
+        "uk": {
+          "title": "Десять секунд погляду",
+          "body": "Прикуси губу і не відводь від мене погляду десять секунд."
+        }
+      }
+    },
+    {
+      "id": "p061",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Down the spine",
+          "body": "Trace your fingers down my spine and tell me where to stop."
+        },
+        "uk": {
+          "title": "Вздовж хребта",
+          "body": "Проведи пальцями вздовж мого хребта і скажи, де зупинитись."
+        }
+      }
+    },
+    {
+      "id": "p062",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "What's next",
+          "body": "Whisper what you want to do to me next into my ear."
+        },
+        "uk": {
+          "title": "Що далі",
+          "body": "Прошепочи мені на вухо, що хочеш зі мною зробити далі."
+        }
+      }
+    },
+    {
+      "id": "p063",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Stay right there",
+          "body": "Straddle my lap and stay there until the next card."
+        },
+        "uk": {
+          "title": "Залишайся тут",
+          "body": "Сядь на мене верхи і залишайся так, поки не з'явиться наступна картка."
+        }
+      }
+    },
+    {
+      "id": "p064",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Pulled close",
+          "body": "Pull me close by the waistband and tell me what you're thinking."
+        },
+        "uk": {
+          "title": "Притягнута близько",
+          "body": "Притягни мене за пояс і скажи, про що зараз думаєш."
+        }
+      }
+    },
+    {
+      "id": "p065",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Somewhere new",
+          "body": "Kiss me somewhere you've never kissed me before tonight."
+        },
+        "uk": {
+          "title": "Ще не цілував",
+          "body": "Поцілуй мене туди, куди ще сьогодні не цілував."
+        }
+      }
+    },
+    {
+      "id": "p066",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Exactly there",
+          "body": "Run your hand up my thigh and stop exactly where I tell you to."
+        },
+        "uk": {
+          "title": "Саме там",
+          "body": "Проведи рукою по моєму стегну і зупинись саме там, де я скажу."
+        }
+      }
+    },
+    {
+      "id": "p067",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Hand under my shirt",
+          "body": "Slide your hand under my shirt and rest it flat against my back."
+        },
+        "uk": {
+          "title": "Рука під сорочкою",
+          "body": "Просунь руку під мою сорочку і поклади долоню мені на спину."
+        }
+      }
+    },
+    {
+      "id": "p068",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Describe what you see",
+          "body": "Undress me with your eyes and describe out loud what you see."
+        },
+        "uk": {
+          "title": "Опиши, що бачиш",
+          "body": "Роздягни мене поглядом і вголос опиши, що бачиш."
+        }
+      }
+    },
+    {
+      "id": "p069",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Pulled against you",
+          "body": "Grab my hips and pull me against you for ten seconds."
+        },
+        "uk": {
+          "title": "Притиснута до тебе",
+          "body": "Схопи мене за стегна і притисни до себе на десять секунд."
+        }
+      }
+    },
+    {
+      "id": "p070",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Only we know",
+          "body": "Leave a mark somewhere only the two of us will ever see."
+        },
+        "uk": {
+          "title": "Знає тільки двоє",
+          "body": "Залиш слід там, де його побачимо тільки ми двоє."
+        }
+      }
+    },
+    {
+      "id": "p071",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "With your teeth",
+          "body": "Take off my shirt using only your teeth."
+        },
+        "uk": {
+          "title": "Тільки зубами",
+          "body": "Зніми з мене сорочку, використовуючи тільки зуби."
+        }
+      }
+    },
+    {
+      "id": "p072",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Show me first",
+          "body": "Get on your knees and show me exactly what you want to do first."
+        },
+        "uk": {
+          "title": "Покажи, з чого почнеш",
+          "body": "Стань на коліна і покажи мені, з чого саме хочеш почати."
+        }
+      }
+    },
+    {
+      "id": "p073",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Lose count",
+          "body": "Pin my wrists above my head and kiss me until I lose count."
+        },
+        "uk": {
+          "title": "Втратити лік",
+          "body": "Притисни мої зап'ястя над головою і цілуй мене, поки я не втрачу лік поцілункам."
+        }
+      }
+    },
+    {
+      "id": "p074",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Wait for me",
+          "body": "Undress completely and wait for me exactly where you're standing."
+        },
+        "uk": {
+          "title": "Чекай на мене",
+          "body": "Роздягнись повністю і чекай на мене саме там, де стоїш."
+        }
+      }
+    },
+    {
+      "id": "p075",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Show me where",
+          "body": "Guide my hand under your clothes and show me what you want."
+        },
+        "uk": {
+          "title": "Покажи де",
+          "body": "Заведи мою руку під свій одяг і покажи, чого хочеш."
+        }
+      }
+    },
+    {
+      "id": "p076",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Don't move",
+          "body": "Get on top of me and don't let me move until you say so."
+        },
+        "uk": {
+          "title": "Не рухайся",
+          "body": "Забирайся на мене зверху і не давай мені поворухнутись, поки сама не дозволиш."
+        }
+      }
+    },
+    {
+      "id": "p077",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Watch, don't touch",
+          "body": "Take off your own clothes, piece by piece, while I watch without touching."
+        },
+        "uk": {
+          "title": "Дивитись, не торкатись",
+          "body": "Роздягайся сама, річ за річчю, поки я дивлюся, не торкаючись."
+        }
+      }
+    },
+    {
+      "id": "p078",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Like it's the last time",
+          "body": "Push me against the nearest wall and kiss me like it's the last time."
+        },
+        "uk": {
+          "title": "Наче востаннє",
+          "body": "Притисни мене до найближчої стіни і поцілуй так, наче востаннє."
+        }
+      }
+    },
+    {
+      "id": "p079",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Then let me",
+          "body": "Whisper exactly what you want me to do to you, then let me do it."
+        },
+        "uk": {
+          "title": "А тоді дозволь",
+          "body": "Прошепочи точно, що хочеш, щоб я з тобою зробив, а тоді дозволь мені це зробити."
+        }
+      }
+    },
+    {
+      "id": "p080",
+      "facets": {
+        "kind": [
+          "dare"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Crawl closer",
+          "body": "Crawl across the bed toward me and stop only when you're close enough to kiss."
+        },
+        "uk": {
+          "title": "Повзи ближче",
+          "body": "Повзи по ліжку до мене і зупинись, тільки коли будеш достатньо близько для поцілунку."
+        }
+      }
+    }
+  ]
+}
