@@ -187,3 +187,14 @@ CREATE TABLE IF NOT EXISTS custom_questions (
 );
 
 CREATE INDEX IF NOT EXISTS custom_questions_creator_id_idx ON custom_questions(creator_id);
+
+CREATE TABLE IF NOT EXISTS pair_position_marks (
+	pair_id      INTEGER NOT NULL REFERENCES pairs(id) ON DELETE CASCADE,
+	position_id  TEXT    NOT NULL,
+	tried_at     TIMESTAMP,
+	favorited_at TIMESTAMP,
+	hidden_at    TIMESTAMP,
+	marked_by    INTEGER REFERENCES users(telegram_id) ON DELETE SET NULL,
+	updated_at   TIMESTAMP NOT NULL,
+	PRIMARY KEY (pair_id, position_id)
+);
