@@ -2,6 +2,7 @@ package storage_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -146,11 +147,21 @@ func TestTogglePositionMarkRejectsInvalidKinds(t *testing.T) {
 		{"SQL fragment", storage.PositionMarkKind("tried_at = 1, favorited_at")},
 	}
 
+	// This substring is specific to the wording valid() uses when it rejects
+	// a kind (see positions.go: `unknown position mark kind %q`). No SQLite
+	// error - "no such column", "expected N destination arguments", etc. -
+	// can ever contain it, so asserting on it proves the guard fired instead
+	// of merely proving that some error, from anywhere, came back.
+	const guardRejectionSubstring = "unknown position mark kind"
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := repo.TogglePositionMark(ctx, pairID, "attack-pos", tt.kind, 1001, now)
 			if err == nil {
 				t.Fatal("TogglePositionMark returned nil error for invalid kind, want non-nil")
+			}
+			if !strings.Contains(err.Error(), guardRejectionSubstring) {
+				t.Fatalf("TogglePositionMark error = %q, want it to contain %q (the valid() guard's rejection message) - a database-level error would not prove the guard ran", err.Error(), guardRejectionSubstring)
 			}
 
 			// Verify no row was created by checking the marks are empty
@@ -165,7 +176,7 @@ func TestTogglePositionMarkRejectsInvalidKinds(t *testing.T) {
 	}
 }
 
-func TestPositionMarkssurviveEndActivePair(t *testing.T) {
+func TestPositionMarksSurviveEndActivePair(t *testing.T) {
 	repo, pairID := newRepoWithPair(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
