@@ -249,7 +249,8 @@ Admin v1:
 
 ## Unfinished Planned Features
 
-- Wire Redis `render:file:{hash}` caching into card send paths, or remove the unused helper.
+- The positions randomiser (module 1 on the shared `internal/catalog`/`internal/modules` framework) is the only superapp module built so far. Modules 2-11 from `docs/superpowers/specs/2026-08-29-couples-superapp-positions-design.md` §3 — action dice, truth-or-dare, date ideas, a matched wishlist, question-of-the-day/streaks, mood check-ins, compliment cards, calendar/anniversaries, shared lists, and pair achievements — remain planned only; several need a not-yet-built `internal/scheduler`.
+- Wire Redis `render:file:{hash}` caching into the card game's own send paths — the positions module already uses this exact helper (`CacheFileID`/`FileID`) to cache Telegram file ids for its own photos.
 - Decide whether pair-invite Redis mirrors are still useful now that invites are durable SQLite rows.
 - Define MinIO lifecycle/retention policy for deleted or orphaned objects beyond app-driven deletes.
 - Consider richer inline image mode only if public JPEG URL hosting is added; v1 intentionally ships text-only inline articles.

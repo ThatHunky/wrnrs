@@ -134,6 +134,34 @@ func (b *fakeBot) EditMessageMedia(_ context.Context, chatID, messageID int64, p
 	return nil
 }
 
+// SendPhotoBytes, SendPhotoRef and EditMessageMediaRef exist only so
+// *fakeBot satisfies positions.Bot (internal/positions/handler.go), which
+// uses Telegram's file-id caching path rather than the byte-upload path the
+// rest of this fake already tracks above. No current test exercises them —
+// the positions integration tests never trigger a photo screen — so they
+// record into the same slices as their byte-upload counterparts and return
+// a deterministic fake file id.
+func (b *fakeBot) SendPhotoBytes(_ context.Context, chatID int64, _ []byte, caption string, replyMarkup any) (telegram.SentPhoto, error) {
+	b.photos++
+	b.sentPhotos = append(b.sentPhotos, sentPhoto{chatID: chatID, caption: caption, markup: replyMarkup})
+	return telegram.SentPhoto{MessageID: 1, FileID: "fake-file-id"}, nil
+}
+
+func (b *fakeBot) SendPhotoRef(_ context.Context, chatID int64, fileID, caption string, replyMarkup any) (telegram.SentPhoto, error) {
+	b.sentPhotos = append(b.sentPhotos, sentPhoto{chatID: chatID, caption: caption, markup: replyMarkup})
+	return telegram.SentPhoto{MessageID: 1, FileID: fileID}, nil
+}
+
+func (b *fakeBot) EditMessageMediaRef(_ context.Context, chatID, messageID int64, fileID, caption string, replyMarkup any) error {
+	b.mediaEdits = append(b.mediaEdits, editedMedia{
+		chatID:    chatID,
+		messageID: messageID,
+		caption:   caption,
+		markup:    replyMarkup,
+	})
+	return nil
+}
+
 func (b *fakeBot) AnswerCallbackQuery(context.Context, string, string) error          { return nil }
 func (b *fakeBot) AnswerPreCheckoutQuery(context.Context, string, bool, string) error { return nil }
 func (b *fakeBot) AnswerInlineQuery(_ context.Context, inlineQueryID string, results []telegram.InlineQueryResult, cacheTime int, isPersonal bool) error {
@@ -1046,6 +1074,14 @@ func newTestApp(t *testing.T) (*App, *fakeBot, *fakeState) {
 		"theme.upload_limit":      "Досягнуто ліміту 3 фонів.",
 		"theme.delete_bg_confirm": "Видалити цей фон?",
 		"theme.upload_success":    "Фон успішно завантажено!",
+
+		"gate.needs_18plus":     "Спочатку підтверди, що тобі є 18+. Це в налаштуваннях.",
+		"gate.needs_mature":     "Цей розділ вимагає згоди на контент 18+. Увімкни її в налаштуваннях.",
+		"gate.needs_pair":       "Спочатку створи пару — цей розділ для двох.",
+		"gate.needs_premium":    "Цей розділ доступний з преміумом.",
+		"module.positions":      "Пози",
+		"positions.hub":         "Пози\n\nКрути навмання, гортай каталог або став фільтри.",
+		"positions.attribution": "Ілюстрації: Sex Positions Club — https://sexpositions.club",
 	}})
 	bundle.Add(i18n.Catalog{Language: "en", Brand: "WRNRS", Strings: map[string]string{
 		"menu.title":                       "Main menu",
@@ -1132,6 +1168,14 @@ func newTestApp(t *testing.T) (*App, *fakeBot, *fakeState) {
 		"theme.upload_limit":      "Limit of 3 backgrounds reached.",
 		"theme.delete_bg_confirm": "Delete this background?",
 		"theme.upload_success":    "Background uploaded successfully!",
+
+		"gate.needs_18plus":     "Confirm you're 18+ first. That's in settings.",
+		"gate.needs_mature":     "This section requires opting in to 18+ content. Turn it on in settings.",
+		"gate.needs_pair":       "Create a pair first — this section is for two.",
+		"gate.needs_premium":    "This section is available with premium.",
+		"module.positions":      "Positions",
+		"positions.hub":         "Positions\n\nSpin the randomiser, browse the catalog, or set filters.",
+		"positions.attribution": "Illustrations: Sex Positions Club — https://sexpositions.club",
 	}})
 	bot := &fakeBot{}
 	state := newFakeState()

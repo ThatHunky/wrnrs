@@ -8,6 +8,7 @@
 - `internal/content`: deck, style, background, and font JSON loading, validation, maturity filtering, and deterministic no-repeat selection.
 - `internal/catalog`: generic content catalogs for superapp modules — facet filtering and deterministic no-repeat selection seeded by pair or user id.
 - `internal/modules`: module registry and access gate (`18+`, mature opt-in, active pair, premium) with callback-prefix dispatch.
+- `internal/positions`: position catalog module — source page parsing, tag taxonomy, browse state, pair-shared marks, throttled dump.
 - `internal/game`: durable pair-game state transitions, invite acceptance, completion types, reveal readiness, no-repeat selection, level progression, and support prompt cadence.
 - `internal/i18n`: localized UI strings and brand text fallback.
 - `internal/storage`: SQLite migration and repository methods for profiles, pairs, sessions, answers, purchases, entitlements, uploads, admin audit, support timestamps, and custom questions.
@@ -51,9 +52,9 @@ When `PUBLIC_BASE_URL` is set, long polling is disabled and Telegram should deli
 
 ## Remaining Follow-Ups
 
-- `render:file:{hash}` is still a Redis helper only; Telegram send paths do not reuse cached file IDs yet.
 - Pair invites remain durable SQLite rows; the earlier idea of Redis invite mirrors is still undecided.
 - MinIO object lifecycle cleanup is operational policy rather than app-enforced retention.
+- Position images are third-party content used without a licence that covers this use. See the risk section of `docs/superpowers/specs/2026-08-29-couples-superapp-positions-design.md`. The asset layer is source-swappable by config.
 
 ## Telegram Notes
 

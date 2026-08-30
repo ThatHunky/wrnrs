@@ -13,9 +13,10 @@ This repository contains a production-shaped Go backend with:
 - Multilingual card content and UI strings.
 - Dynamic card rendering with selectable Cyrillic-capable fonts, styles, built-in backgrounds, and uploaded WebP backgrounds.
 - Telegram Stars premium purchase flow and admin grant/revoke flows.
-- Core tests for deck filtering, no-repeat session selection, synchronized invite/reveal gameplay, encrypted answer storage, answer journal, support interstitials, rendering, storage, admin actions, payments, inline mode, pair cleanup, rate limits, and theme uploads.
+- A module framework (`internal/modules`) with an access gate for `18+`, mature opt-in, pair and premium requirements, plus a 519-entry bilingual positions catalog module (`internal/positions`) — random/browse/filter, pair-shared tried/favorited/hidden marks, and a throttled full-catalog dump.
+- Core tests for deck filtering, no-repeat session selection, synchronized invite/reveal gameplay, encrypted answer storage, answer journal, support interstitials, rendering, storage, admin actions, payments, inline mode, pair cleanup, rate limits, theme uploads, and the positions module.
 
-The runnable version supports onboarding entry with optional own-contact and background steps, reset/cancel, pairing by ID, username, contact, or invite link, synchronized pair gameplay with partner acceptance, rendered cards, custom questions in gameplay, answer journal, before-reveal support prompts, theme customization, uploaded/shared backgrounds, pair break/account deletion cleanup, text-only inline mode, admin card previews, admin grants/revokes, premium invoices, and `/paysupport`.
+The runnable version supports onboarding entry with optional own-contact and background steps, reset/cancel, pairing by ID, username, contact, or invite link, synchronized pair gameplay with partner acceptance, rendered cards, custom questions in gameplay, answer journal, before-reveal support prompts, theme customization, uploaded/shared backgrounds, pair break/account deletion cleanup, text-only inline mode, admin card previews, admin grants/revokes, premium invoices, `/paysupport`, and the 18+/mature-gated positions module.
 
 Remaining follow-ups are lower-level hardening: wire the Redis render file-ID cache into send paths, define a MinIO lifecycle policy, and decide whether pair-invite Redis mirrors are still worth adding. See [Full plan](docs/PLAN.md) and [Message flow audit](docs/MESSAGE_FLOW_AUDIT.md).
 
@@ -30,6 +31,12 @@ For local tests without Docker:
 
 ```bash
 GOTOOLCHAIN=local go test ./...
+```
+
+Наповнити каталог поз (разова операція, ~17 хв):
+
+```bash
+GOTOOLCHAIN=local go run ./cmd/ingest-positions --from 1 --to 519 --delay 1s
 ```
 
 ## Required Environment

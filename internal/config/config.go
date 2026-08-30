@@ -25,6 +25,9 @@ type Config struct {
 	SupportPromptInterval time.Duration
 	FeatureInlineMode     bool
 	CardFontPath          string
+	PositionsCatalogPath  string
+	PositionsBucket       string
+	PositionsPrefix       string
 }
 
 type MinIOConfig struct {
@@ -56,6 +59,9 @@ func Load(getenv Getter) (Config, error) {
 		SupportPromptInterval: 48 * time.Hour,
 		FeatureInlineMode:     parseBool(getenv("FEATURE_INLINE_MODE")),
 		CardFontPath:          withDefault(getenv("CARD_FONT_PATH"), "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+		PositionsCatalogPath:  withDefault(getenv("POSITIONS_CATALOG_PATH"), "content/positions.v1.json"),
+		PositionsBucket:       withDefault(getenv("POSITIONS_BUCKET"), "wrnrs-assets"),
+		PositionsPrefix:       withDefault(getenv("POSITIONS_PREFIX"), "positions/"),
 		MinIO: MinIOConfig{
 			Endpoint:  withDefault(getenv("MINIO_ENDPOINT"), "minio:9000"),
 			AccessKey: getenv("MINIO_ACCESS_KEY"),
