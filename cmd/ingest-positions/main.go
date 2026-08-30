@@ -6,6 +6,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -21,6 +23,8 @@ import (
 	"time"
 
 	"wrnrs/internal/catalog"
+	"wrnrs/internal/config"
+	"wrnrs/internal/objectstore"
 	"wrnrs/internal/positions"
 )
 
@@ -47,7 +51,15 @@ func main() {
 	delay := flag.Duration("delay", time.Second, "delay between requests to the source")
 	resumePath := flag.String("resume", "ingest-progress.json", "progress file")
 	reviewPath := flag.String("review", "review.json", "path for pages needing manual review")
+	seedOnly := flag.Bool("seed-only", false, "upload the already-downloaded images in --images-dir to the object store (POSITIONS_BUCKET/POSITIONS_PREFIX) and exit; makes no request to the source site and does not crawl")
 	flag.Parse()
+
+	if *seedOnly {
+		if err := runSeed(*imagesDir, *out); err != nil {
+			log.Fatalf("seed: %v", err)
+		}
+		return
+	}
 
 	if *delay < time.Second {
 		log.Fatalf("--delay must be at least 1s; the source must not be hammered")
@@ -344,6 +356,110 @@ func writeReview(path string, entries []reviewEntry) {
 	}
 	if err := writeFileAtomic(path, data, 0o644); err != nil {
 		log.Printf("write review: %v", err)
+	}
+}
+
+// objectPutGetter is the narrow slice of *objectstore.MinIOStore that
+// seedCatalog needs. Declaring it here (rather than depending on the
+// concrete type) lets tests exercise seedCatalog against an in-memory fake
+// instead of a real MinIO server, matching the pattern the rest of this
+// codebase uses for its other narrow interfaces.
+type objectPutGetter interface {
+	Get(ctx context.Context, objectKey string) ([]byte, error)
+	Put(ctx context.Context, objectKey, contentType string, data []byte) error
+}
+
+// runSeed is the entry point for --seed-only. It never fetches anything
+// from the source website: it only reads the catalog already committed at
+// catalogPath and the image files the earlier crawl already downloaded
+// under imagesDir, and uploads them to the object store named by
+// POSITIONS_BUCKET/POSITIONS_PREFIX (via config.LoadAssetConfig, so those
+// settings are the single source of truth rather than being duplicated or
+// hardcoded here).
+func runSeed(imagesDir, catalogPath string) error {
+	assets := config.LoadAssetConfig(os.Getenv)
+	if assets.MinIO.AccessKey == "" && assets.MinIO.SecretKey == "" {
+		return fmt.Errorf("MINIO_ACCESS_KEY/MINIO_SECRET_KEY must be set to seed the object store")
+	}
+
+	store, err := objectstore.NewMinIOStore(objectstore.MinIOConfig{
+		Endpoint:  assets.MinIO.Endpoint,
+		AccessKey: assets.MinIO.AccessKey,
+		SecretKey: assets.MinIO.SecretKey,
+		Bucket:    assets.PositionsBucket,
+		UseSSL:    assets.MinIO.UseSSL,
+	})
+	if err != nil {
+		return fmt.Errorf("create minio client: %w", err)
+	}
+
+	ctx := context.Background()
+	if err := store.EnsureBucket(ctx); err != nil {
+		return fmt.Errorf("ensure bucket %s: %w", assets.PositionsBucket, err)
+	}
+
+	cat := loadCatalog(catalogPath)
+	if len(cat.Items) == 0 {
+		return fmt.Errorf("catalog %s has no items; nothing to seed", catalogPath)
+	}
+
+	uploaded, skipped, err := seedCatalog(ctx, store, imagesDir, assets.PositionsPrefix, cat)
+	if err != nil {
+		return err
+	}
+	log.Printf("seed: uploaded %d objects, skipped %d already up to date (bucket=%s prefix=%s, %d catalog items)", uploaded, skipped, assets.PositionsBucket, assets.PositionsPrefix, len(cat.Items))
+	return nil
+}
+
+// seedCatalog uploads every catalog item's already-downloaded local image
+// to store, byte for byte: no decode, resize, re-encode, or watermark
+// alteration, since attribution/watermark preservation is a product
+// requirement. It is idempotent — an object whose remote bytes already
+// match the local file is counted as skipped rather than re-uploaded, so a
+// second run over an already-seeded bucket uploads nothing. It performs no
+// network I/O beyond talking to store; it never contacts the source
+// website.
+func seedCatalog(ctx context.Context, store objectPutGetter, imagesDir, prefix string, cat catalog.Catalog) (uploaded, skipped int, err error) {
+	for _, item := range cat.Items {
+		if item.Media == nil || item.Media.Key == "" {
+			continue
+		}
+		base := filepath.Base(item.Media.Key)
+		localPath := filepath.Join(imagesDir, base)
+		data, readErr := os.ReadFile(localPath)
+		if readErr != nil {
+			return uploaded, skipped, fmt.Errorf("read local image for item %s at %s: %w", item.ID, localPath, readErr)
+		}
+
+		objectKey := prefix + base
+		if existing, getErr := store.Get(ctx, objectKey); getErr == nil && bytes.Equal(existing, data) {
+			skipped++
+			continue
+		}
+		if putErr := store.Put(ctx, objectKey, seedContentType(base), data); putErr != nil {
+			return uploaded, skipped, fmt.Errorf("upload %s: %w", objectKey, putErr)
+		}
+		uploaded++
+	}
+	return uploaded, skipped, nil
+}
+
+// seedContentType maps a filename's extension to a Content-Type. It never
+// inspects the file's bytes: doing so could invite "helpfully" re-encoding
+// or otherwise touching the image, which the verbatim-upload requirement
+// rules out.
+func seedContentType(name string) string {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".png":
+		return "image/png"
+	case ".webp":
+		return "image/webp"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	default:
+		return "application/octet-stream"
 	}
 }
 

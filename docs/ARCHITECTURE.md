@@ -22,6 +22,8 @@
 
 SQLite is the durable source of truth and is opened with `PRAGMA foreign_keys = ON` so GDPR account deletion cascades through encrypted answer, receipt, entitlement, and asset metadata rows. Redis stores conversational prompts, a render file-ID cache helper, best-effort pair locks, and fixed-window per-user rate-limit counters. MinIO stores processed object bytes only; SQLite stores object keys and metadata. JSON content is immutable application content loaded at boot.
 
+`content/positions.v1.json` and the crawled images under `positions-images/` are committed content, not runtime state: they are populated once by `cmd/ingest-positions`'s crawl mode and are not regenerated at boot or by re-crawling. Populating MinIO with those images is a separate, idempotent step: `cmd/ingest-positions --seed-only` reads the already-downloaded local files and uploads them verbatim (no decode/resize/re-encode) under the bucket and key prefix named by `POSITIONS_BUCKET`/`POSITIONS_PREFIX`, which `internal/config.LoadAssetConfig` resolves independently of the full bot-runtime `Load` so the seeding tool never needs `ANSWER_ENCRYPTION_KEY` or other bot secrets. `cmd/wrnrs` reads `POSITIONS_BUCKET` at boot too: it opens a second MinIO client scoped to that bucket (reusing the primary client when `POSITIONS_BUCKET` equals `MINIO_BUCKET`, the default) and passes it to the positions module's `ObjectStore`.
+
 ## Current Runtime Behavior
 
 The service boots, validates required config including `ANSWER_ENCRYPTION_KEY`, runs additive SQLite migrations, connects Redis, optionally ensures MinIO, loads content, and handles Telegram updates through webhook or long polling.
@@ -54,7 +56,7 @@ When `PUBLIC_BASE_URL` is set, long polling is disabled and Telegram should deli
 
 - Pair invites remain durable SQLite rows; the earlier idea of Redis invite mirrors is still undecided.
 - MinIO object lifecycle cleanup is operational policy rather than app-enforced retention.
-- Position images are third-party content used without a licence that covers this use. See the risk section of `docs/superpowers/specs/2026-08-29-couples-superapp-positions-design.md`. The asset layer is source-swappable by config.
+- Position images are third-party content used without a licence that covers this use. See the risk section of `docs/superpowers/specs/2026-08-29-couples-superapp-positions-design.md`. The asset layer is source-swappable by config: `POSITIONS_BUCKET` is real end to end (both the seeding tool and `cmd/wrnrs`'s boot wiring read it). `POSITIONS_PREFIX` is only fully real on the write side (seeding composes the upload key from it) — the read side (`internal/positions`'s handler) still trusts the `media.key` baked into `content/positions.v1.json` at crawl time verbatim rather than recomposing it from `POSITIONS_PREFIX`, so overriding `POSITIONS_PREFIX` away from its default (`positions/`, which already matches the baked-in keys) would break lookups. Closing that gap needs a `Prefix` (or similar) field added to `positions.HandlerOptions` and wired at the `cmd/wrnrs/main.go` call site.
 
 ## Telegram Notes
 

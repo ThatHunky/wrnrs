@@ -65,6 +65,7 @@ func run(logger *slog.Logger) error {
 	}
 
 	var minioStore *objectstore.MinIOStore
+	var positionsStore *objectstore.MinIOStore
 	if cfg.MinIO.AccessKey != "" || cfg.MinIO.SecretKey != "" {
 		var err error
 		minioStore, err = objectstore.NewMinIOStore(objectstore.MinIOConfig{
@@ -81,6 +82,32 @@ func run(logger *slog.Logger) error {
 			return minioStore.EnsureBucket(ctx)
 		}); err != nil {
 			return err
+		}
+
+		// The positions catalog's images live under POSITIONS_BUCKET, which
+		// only diverges from MINIO_BUCKET when an operator explicitly
+		// configures it that way — see docs/ARCHITECTURE.md's "source-
+		// swappable by config" claim. When they match (the common case, and
+		// both default to the same value) reuse minioStore instead of
+		// opening a second client for the same bucket.
+		if cfg.PositionsBucket == cfg.MinIO.Bucket {
+			positionsStore = minioStore
+		} else {
+			positionsStore, err = objectstore.NewMinIOStore(objectstore.MinIOConfig{
+				Endpoint:  cfg.MinIO.Endpoint,
+				AccessKey: cfg.MinIO.AccessKey,
+				SecretKey: cfg.MinIO.SecretKey,
+				Bucket:    cfg.PositionsBucket,
+				UseSSL:    cfg.MinIO.UseSSL,
+			})
+			if err != nil {
+				return err
+			}
+			if err := retryUntilSuccess(ctx, retryOptions{Attempts: 30, Delay: time.Second, Sleep: sleepContext}, func() error {
+				return positionsStore.EnsureBucket(ctx)
+			}); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -122,7 +149,7 @@ func run(logger *slog.Logger) error {
 		Styles:      styles,
 		Backgrounds: backgrounds,
 		Fonts:       fonts,
-		ObjectStore: minioStore,
+		ObjectStore: appObjectStore(minioStore),
 		Logger:      logger,
 	})
 
@@ -145,7 +172,7 @@ func run(logger *slog.Logger) error {
 			Repository:  repo,
 			Bot:         bot,
 			State:       redisStore,
-			ObjectStore: minioStore,
+			ObjectStore: positionsObjectStore(positionsStore),
 			I18n:        bundle,
 		})
 		if err := application.Registry().Register(modules.Module{
@@ -218,6 +245,33 @@ func routes(application *app.App, db *sql.DB, redisStore *state.RedisStore, logg
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	return mux
+}
+
+// appObjectStore and positionsObjectStore box *objectstore.MinIOStore into
+// their respective narrow interfaces, but only when store is genuinely
+// non-nil. minioStore/positionsStore are typed *objectstore.MinIOStore and
+// stay nil when MinIO is unconfigured; assigning a nil pointer of that
+// concrete type directly to an interface-typed field (app.Options.
+// ObjectStore, positions.HandlerOptions.ObjectStore) would box a typed nil
+// into a non-nil interface value. Every `!= nil` guard downstream
+// (app.go's and handler.go's "ObjectStore can be absent" checks) would
+// then incorrectly report the store as present, and the first method call
+// would panic dereferencing a nil receiver — with no recover() anywhere in
+// this codebase, that panic takes the whole process down. Routing every
+// assignment through these functions is what keeps the interface field
+// itself nil, not just the pointer inside it, whenever the store is unset.
+func appObjectStore(store *objectstore.MinIOStore) app.ObjectStore {
+	if store == nil {
+		return nil
+	}
+	return store
+}
+
+func positionsObjectStore(store *objectstore.MinIOStore) positions.ObjectStore {
+	if store == nil {
+		return nil
+	}
+	return store
 }
 
 func webhookSecretMatches(configured, received string) bool {

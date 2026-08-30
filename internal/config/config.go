@@ -43,9 +43,45 @@ type DonationConfig struct {
 	CardNumber  string
 }
 
+// AssetConfig is the narrow slice of Config that anything talking to the
+// object store needs: MinIO connection details plus the bucket/prefix the
+// positions catalog's images live under. It exists so a standalone tool
+// (cmd/ingest-positions' seeding mode) can read exactly these settings via
+// LoadAssetConfig without going through the full Load, which additionally
+// requires ANSWER_ENCRYPTION_KEY and other bot-runtime settings that a
+// one-off seeding run has no use for.
+type AssetConfig struct {
+	MinIO           MinIOConfig
+	PositionsBucket string
+	PositionsPrefix string
+}
+
 type Getter func(string) string
 
+// LoadAssetConfig reads only the object-store settings: MINIO_ENDPOINT,
+// MINIO_ACCESS_KEY, MINIO_SECRET_KEY, MINIO_BUCKET, MINIO_USE_SSL,
+// POSITIONS_BUCKET, and POSITIONS_PREFIX. It shares its defaults with Load
+// (both call loadAssetConfig) so the two never drift apart.
+func LoadAssetConfig(getenv Getter) AssetConfig {
+	return loadAssetConfig(getenv)
+}
+
+func loadAssetConfig(getenv Getter) AssetConfig {
+	return AssetConfig{
+		MinIO: MinIOConfig{
+			Endpoint:  withDefault(getenv("MINIO_ENDPOINT"), "minio:9000"),
+			AccessKey: getenv("MINIO_ACCESS_KEY"),
+			SecretKey: getenv("MINIO_SECRET_KEY"),
+			Bucket:    withDefault(getenv("MINIO_BUCKET"), "wrnrs-assets"),
+			UseSSL:    parseBool(getenv("MINIO_USE_SSL")),
+		},
+		PositionsBucket: withDefault(getenv("POSITIONS_BUCKET"), "wrnrs-assets"),
+		PositionsPrefix: withDefault(getenv("POSITIONS_PREFIX"), "positions/"),
+	}
+}
+
 func Load(getenv Getter) (Config, error) {
+	assets := loadAssetConfig(getenv)
 	cfg := Config{
 		BotToken:              getenv("BOT_TOKEN"),
 		BotUsername:           strings.TrimPrefix(getenv("BOT_USERNAME"), "@"),
@@ -60,15 +96,9 @@ func Load(getenv Getter) (Config, error) {
 		FeatureInlineMode:     parseBool(getenv("FEATURE_INLINE_MODE")),
 		CardFontPath:          withDefault(getenv("CARD_FONT_PATH"), "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
 		PositionsCatalogPath:  withDefault(getenv("POSITIONS_CATALOG_PATH"), "content/positions.v1.json"),
-		PositionsBucket:       withDefault(getenv("POSITIONS_BUCKET"), "wrnrs-assets"),
-		PositionsPrefix:       withDefault(getenv("POSITIONS_PREFIX"), "positions/"),
-		MinIO: MinIOConfig{
-			Endpoint:  withDefault(getenv("MINIO_ENDPOINT"), "minio:9000"),
-			AccessKey: getenv("MINIO_ACCESS_KEY"),
-			SecretKey: getenv("MINIO_SECRET_KEY"),
-			Bucket:    withDefault(getenv("MINIO_BUCKET"), "wrnrs-assets"),
-			UseSSL:    parseBool(getenv("MINIO_USE_SSL")),
-		},
+		PositionsBucket:       assets.PositionsBucket,
+		PositionsPrefix:       assets.PositionsPrefix,
+		MinIO:                 assets.MinIO,
 		Donation: DonationConfig{
 			MonobankURL: getenv("DONATION_MONOBANK_URL"),
 			CardNumber:  getenv("DONATION_CARD_NUMBER"),

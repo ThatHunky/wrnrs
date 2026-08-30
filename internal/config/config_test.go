@@ -62,3 +62,63 @@ func TestLoadRequiresValidAnswerEncryptionKey(t *testing.T) {
 		t.Fatal("Load succeeded with invalid ANSWER_ENCRYPTION_KEY")
 	}
 }
+
+func TestLoadAssetConfigAppliesDefaultsWithoutRequiringAnswerEncryptionKey(t *testing.T) {
+	// LoadAssetConfig must work standalone (no BOT_TOKEN, no
+	// ANSWER_ENCRYPTION_KEY) so a seeding-only tool never has to satisfy the
+	// full bot-runtime config just to talk to the object store.
+	assets := config.LoadAssetConfig(func(string) string { return "" })
+
+	if assets.MinIO.Endpoint != "minio:9000" {
+		t.Fatalf("MinIO.Endpoint = %q, want default minio:9000", assets.MinIO.Endpoint)
+	}
+	if assets.MinIO.Bucket != "wrnrs-assets" {
+		t.Fatalf("MinIO.Bucket = %q, want default wrnrs-assets", assets.MinIO.Bucket)
+	}
+	if assets.PositionsBucket != "wrnrs-assets" {
+		t.Fatalf("PositionsBucket = %q, want default wrnrs-assets", assets.PositionsBucket)
+	}
+	if assets.PositionsPrefix != "positions/" {
+		t.Fatalf("PositionsPrefix = %q, want default positions/", assets.PositionsPrefix)
+	}
+}
+
+func TestLoadAssetConfigReadsOverridesAndAgreesWithLoad(t *testing.T) {
+	env := map[string]string{
+		"BOT_TOKEN":             "123:abc",
+		"ANSWER_ENCRYPTION_KEY": "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+		"MINIO_ENDPOINT":        "minio.internal:9000",
+		"MINIO_ACCESS_KEY":      "ak",
+		"MINIO_SECRET_KEY":      "sk",
+		"MINIO_BUCKET":          "custom-bucket",
+		"MINIO_USE_SSL":         "true",
+		"POSITIONS_BUCKET":      "positions-bucket",
+		"POSITIONS_PREFIX":      "assets/positions/",
+	}
+	getenv := func(key string) string { return env[key] }
+
+	assets := config.LoadAssetConfig(getenv)
+	if assets.MinIO.Endpoint != "minio.internal:9000" || assets.MinIO.AccessKey != "ak" || assets.MinIO.SecretKey != "sk" || assets.MinIO.Bucket != "custom-bucket" || !assets.MinIO.UseSSL {
+		t.Fatalf("LoadAssetConfig MinIO = %+v", assets.MinIO)
+	}
+	if assets.PositionsBucket != "positions-bucket" {
+		t.Fatalf("PositionsBucket = %q, want positions-bucket", assets.PositionsBucket)
+	}
+	if assets.PositionsPrefix != "assets/positions/" {
+		t.Fatalf("PositionsPrefix = %q, want assets/positions/", assets.PositionsPrefix)
+	}
+
+	// Load must agree with LoadAssetConfig for the fields they share, since
+	// Load now composes its MinIO/PositionsBucket/PositionsPrefix fields
+	// from the same loadAssetConfig helper.
+	cfg, err := config.Load(getenv)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.MinIO != assets.MinIO {
+		t.Fatalf("Load MinIO = %+v, want it to match LoadAssetConfig MinIO = %+v", cfg.MinIO, assets.MinIO)
+	}
+	if cfg.PositionsBucket != assets.PositionsBucket || cfg.PositionsPrefix != assets.PositionsPrefix {
+		t.Fatalf("Load positions bucket/prefix = %q/%q, want %q/%q", cfg.PositionsBucket, cfg.PositionsPrefix, assets.PositionsBucket, assets.PositionsPrefix)
+	}
+}

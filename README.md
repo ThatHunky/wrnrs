@@ -33,10 +33,17 @@ For local tests without Docker:
 GOTOOLCHAIN=local go test ./...
 ```
 
-Наповнити каталог поз (разова операція, ~17 хв):
+Каталог поз (519 позицій, `content/positions.v1.json` + `positions-images/`) вже наповнений і закомічений у репозиторії. **Не запускайте краулер повторно** — це разова операція (~17 хв опитування стороннього сайту раз на секунду), яка вже виконана; повторний запуск лише даремно навантажить сторонній сайт. Команда нижче документована для довідки, а не для повторного виконання:
 
 ```bash
+# One-off, already done. Do NOT re-run — see the note above.
 GOTOOLCHAIN=local go run ./cmd/ingest-positions --from 1 --to 519 --delay 1s
+```
+
+Замість цього оператору потрібно наповнити object store (MinIO) вже завантаженими зображеннями — ця команда не звертається до стороннього сайту, лише читає локальні файли з `positions-images/` і завантажує їх у бакет/префікс з `POSITIONS_BUCKET`/`POSITIONS_PREFIX`, ідемпотентно (безпечно запускати повторно):
+
+```bash
+GOTOOLCHAIN=local go run ./cmd/ingest-positions --seed-only
 ```
 
 ## Required Environment
