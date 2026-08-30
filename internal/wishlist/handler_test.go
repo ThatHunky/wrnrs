@@ -358,6 +358,51 @@ func TestShowMatchesWithPairButNoMatchesShowsEmpty(t *testing.T) {
 	}
 }
 
+// TestShowMatchesRendersStrongAndNonStrongDistinctly pins the ruling that
+// the strong/non-strong badge on the matches screen stays: it is not an
+// accidental leak, it is the deliberate point of showing matches at all
+// (see storage.WishMatch's doc comment). One strong ("want" both sides) and
+// one non-strong ("want" + "curious") match must render as two visibly
+// different lines, each carrying its own item's title.
+func TestShowMatchesRendersStrongAndNonStrongDistinctly(t *testing.T) {
+	repo := &fakeWishRepo{
+		pair: &storage.Pair{ID: 1, UserAID: 1, UserBID: 2},
+		matches: []storage.WishMatch{
+			{ItemKind: storage.WishKindWish, ItemID: "w001", Strong: true},
+			{ItemKind: storage.WishKindWish, ItemID: "w002", Strong: false},
+		},
+	}
+	bot := &fakeBot{}
+	h := newTestHandler(repo, bot)
+
+	if err := h.HandleCallback(context.Background(), privateCallback(1, "wish:matches")); err != nil {
+		t.Fatalf("HandleCallback: %v", err)
+	}
+	text := lastText(bot)
+
+	var strongLine, otherLine string
+	for _, line := range strings.Split(text, "\n") {
+		switch {
+		case strings.Contains(line, "перше"): // w001's title, from the shared testCatalog
+			strongLine = line
+		case strings.Contains(line, "друге"): // w002's title
+			otherLine = line
+		}
+	}
+	if strongLine == "" || otherLine == "" {
+		t.Fatalf("matches text %q is missing one of the two matched items", text)
+	}
+	if !strings.Contains(strongLine, "🔥") {
+		t.Fatalf("strong match line %q does not carry the strong badge", strongLine)
+	}
+	if strings.Contains(otherLine, "🔥") {
+		t.Fatalf("non-strong match line %q wrongly carries the strong badge", otherLine)
+	}
+	if strongLine == otherLine {
+		t.Fatalf("strong and non-strong match lines render identically: %q", strongLine)
+	}
+}
+
 func lastText(bot *fakeBot) string {
 	if len(bot.editedTexts) > 0 {
 		return bot.editedTexts[len(bot.editedTexts)-1]

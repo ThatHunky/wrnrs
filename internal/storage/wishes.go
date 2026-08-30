@@ -28,10 +28,25 @@ const (
 // WishMatch is one item both partners are open to. Strong marks the case
 // where both said "want" rather than one merely being curious.
 //
-// This is deliberately the ONLY shape in which one partner's stance reaches
-// the other: a match says "you are both open to this" and never reveals an
-// individual answer. There is no repository method that returns another
-// user's answers, and adding one would break the module's core promise.
+// The guarantee this type protects is narrower than "never reveals an
+// individual answer": a match never reveals that either partner said "no".
+// That is the one invariant that matters — it is what lets someone answer
+// honestly without fear of their "no" ever reaching their partner — and it
+// holds regardless of Strong.
+//
+// Within a match, want-vs-curious is NOT hidden, and that is by design, not
+// an oversight: Strong tells a viewer directly whether the partner also
+// said "want" rather than merely "curious", and even without Strong the
+// matching rule below already leaks this in one direction on its own —
+// curious+curious never matches, so anyone who personally answered
+// "curious" and sees a match at all already knows, with certainty, that
+// their partner said "want". Showing that degree of mutual enthusiasm is
+// the point of a matches screen; hiding it would not be possible without
+// also hiding whether a match exists at all.
+//
+// There is no repository method that returns another user's raw answer,
+// and adding one would break the one thing this type actually promises:
+// nobody's "no" is ever exposed.
 type WishMatch struct {
 	ItemKind WishItemKind
 	ItemID   string
