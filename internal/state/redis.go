@@ -129,8 +129,30 @@ func (s *RedisStore) FileID(ctx context.Context, renderHash string) (string, err
 	return value, err
 }
 
+// SetModuleState stores a per-module state slot for a user, separate from
+// the onboarding FSM slot (fsm:user:{id}). A module like the positions
+// browser must not reuse that key: overwriting it mid-onboarding would
+// strand the user with a lost onboarding step.
+func (s *RedisStore) SetModuleState(ctx context.Context, userID int64, module, value string, ttl time.Duration) error {
+	return s.client.Set(ctx, moduleStateKey(userID, module), value, ttl).Err()
+}
+
+// ModuleState returns the stored per-module state, or ("", nil) if none is
+// set yet.
+func (s *RedisStore) ModuleState(ctx context.Context, userID int64, module string) (string, error) {
+	value, err := s.client.Get(ctx, moduleStateKey(userID, module)).Result()
+	if errors.Is(err, redis.Nil) {
+		return "", nil
+	}
+	return value, err
+}
+
 func fsmKey(userID int64) string {
 	return "fsm:user:" + strconv.FormatInt(userID, 10)
+}
+
+func moduleStateKey(userID int64, module string) string {
+	return "mod:" + module + ":user:" + strconv.FormatInt(userID, 10)
 }
 
 func pendingGameCompletionKey(userID int64) string {
