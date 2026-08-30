@@ -202,6 +202,13 @@ func (h *Handler) language(ctx context.Context, userID int64, clientLanguage str
 // missing entry, or a corrupt one all degrade the same way: a fresh
 // GameState{}, which is a perfectly valid starting point (filter open, no
 // cards drawn yet, A's turn first).
+//
+// The load-mutate-save cycle around this function is not atomic: two taps
+// racing (a double-tap, or the same account on two devices) both load the
+// same state and the second save wins, so the same card can be dealt twice
+// and one turn flip can be lost. Known and accepted — internal/positions'
+// browse state works exactly the same way, and the cost of losing the race
+// is one repeated card in a game, not lost data.
 func (h *Handler) loadState(ctx context.Context, userID int64) GameState {
 	if h.state == nil {
 		return GameState{}
@@ -292,8 +299,18 @@ func (h *Handler) showHub(ctx context.Context, cb *telegram.CallbackQuery, chatI
 // third UserLanguage call before dispatch even reaches this method — the
 // same pattern internal/positions and internal/wishlist use. Neither
 // Service.Next nor the state read/write touch SQLite — GameState lives in
-// Redis, never in storage.Repository — so a paired play:next costs exactly
-// three database queries, a solo one exactly two.
+// Redis, never in storage.Repository — so a paired play:next costs three
+// database queries inside this module and a solo one two.
+//
+// End to end the honest number is higher. Before dispatch ever reaches this
+// method the framework has already run four of its own (userLanguage,
+// UserMaturity, ActivePairForUser, UserHasEntitlement), so a paired
+// play:next really costs seven — and two of this module's three
+// (UserLanguage, ActivePairForUser) are literal re-reads of what the gate
+// just read. That duplication is the number that will eventually justify
+// widening the modules.Handler contract to hand the already-resolved
+// language and pair to the module, so it is recorded here honestly rather
+// than counted only from the module boundary inward.
 func (h *Handler) showCard(ctx context.Context, cb *telegram.CallbackQuery, chatID, userID int64, language string, flipTurn bool) error {
 	pair, err := h.repo.ActivePairForUser(ctx, userID)
 	if err != nil {
