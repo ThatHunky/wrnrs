@@ -1,0 +1,1266 @@
+{
+  "kind": "wishes",
+  "version": 1,
+  "items": [
+    {
+      "id": "w001",
+      "facets": {
+        "kind": [
+          "place"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A shared bath",
+          "body": "The two of them soak together in warm water, lit by a few candles, in no hurry to get out."
+        },
+        "uk": {
+          "title": "Спільна ванна",
+          "body": "Двоє лежать разом у теплій воді при світлі кількох свічок і нікуди не поспішають."
+        }
+      }
+    },
+    {
+      "id": "w002",
+      "facets": {
+        "kind": [
+          "place"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A slow Sunday morning",
+          "body": "The two of them stay in bed long after waking, wrapped in the same blanket with nowhere to be."
+        },
+        "uk": {
+          "title": "Ліниво в неділю",
+          "body": "Прокинувшись, двоє ще довго лишаються в ліжку, загорнуті в одну ковдру, і їм нікуди йти."
+        }
+      }
+    },
+    {
+      "id": "w003",
+      "facets": {
+        "kind": [
+          "place"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A hotel room getaway",
+          "body": "One partner books a hotel room for a night, away from chores and routines, so the two of them can be alone together."
+        },
+        "uk": {
+          "title": "Ніч у готелі",
+          "body": "Хтось із партнерів бронює номер у готелі на одну ніч, подалі від побуту й справ, щоб побути удвох."
+        }
+      }
+    },
+    {
+      "id": "w004",
+      "facets": {
+        "kind": [
+          "place"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Showering together",
+          "body": "The two of them step into the shower together and take turns washing each other slowly, in no particular rush."
+        },
+        "uk": {
+          "title": "Разом під душем",
+          "body": "Двоє заходять у душ разом і по черзі неквапом миють одне одного."
+        }
+      }
+    },
+    {
+      "id": "w005",
+      "facets": {
+        "kind": [
+          "role"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A massage with nothing expected back",
+          "body": "One partner gives the other a slow, full-body massage and asks for nothing back that night."
+        },
+        "uk": {
+          "title": "Масаж без відповіді",
+          "body": "Один партнер робить іншому повільний масаж усього тіла й того вечора нічого не просить натомість."
+        }
+      }
+    },
+    {
+      "id": "w006",
+      "facets": {
+        "kind": [
+          "role"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Letting them plan the evening",
+          "body": "One partner plans and leads a whole romantic evening as a surprise, while the other simply follows along."
+        },
+        "uk": {
+          "title": "Довірити вечір партнеру",
+          "body": "Один партнер планує й веде цілий романтичний вечір як сюрприз, а інший просто йде за ним."
+        }
+      }
+    },
+    {
+      "id": "w007",
+      "facets": {
+        "kind": [
+          "role"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Just receiving",
+          "body": "One partner takes care of everything so the other can relax completely and simply receive, without doing anything themselves."
+        },
+        "uk": {
+          "title": "Тільки приймати",
+          "body": "Один партнер бере все на себе, а інший просто розслабляється й приймає, нічого не роблячи."
+        }
+      }
+    },
+    {
+      "id": "w008",
+      "facets": {
+        "kind": [
+          "pace"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "No end time",
+          "body": "The evening is set aside with nowhere to be afterward, so nothing about it has to be rushed."
+        },
+        "uk": {
+          "title": "Без обмеження в часі",
+          "body": "На це відведено цілий вечір, після якого нікуди йти не треба, тож поспішати немає потреби."
+        }
+      }
+    },
+    {
+      "id": "w009",
+      "facets": {
+        "kind": [
+          "pace"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Foreplay as the whole point",
+          "body": "The whole evening is only about touching, kissing and teasing, with no expectation of anything beyond that."
+        },
+        "uk": {
+          "title": "Лише прелюдія",
+          "body": "Цілий вечір присвячений лише дотикам, поцілункам і дражнінню, без жодних очікувань щодо продовження."
+        }
+      }
+    },
+    {
+      "id": "w010",
+      "facets": {
+        "kind": [
+          "pace"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "One slow rhythm",
+          "body": "The two of them keep to one slow, steady rhythm from start to finish, and never let it speed up."
+        },
+        "uk": {
+          "title": "Один повільний ритм",
+          "body": "Двоє тримають один повільний, рівний ритм від початку до кінця й жодного разу не прискорюються."
+        }
+      }
+    },
+    {
+      "id": "w011",
+      "facets": {
+        "kind": [
+          "mood"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A playlist for just the two of them",
+          "body": "A chosen playlist quietly plays in the background while things unfold between the two of them."
+        },
+        "uk": {
+          "title": "Плейлист на двох",
+          "body": "На фоні тихо грає заздалегідь обраний плейлист, поки між ними все поступово розвивається."
+        }
+      }
+    },
+    {
+      "id": "w012",
+      "facets": {
+        "kind": [
+          "mood"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Keeping eye contact",
+          "body": "The two of them keep looking into each other's eyes for as much of it as they can, instead of closing them."
+        },
+        "uk": {
+          "title": "Не відводити погляд",
+          "body": "Двоє намагаються якнайдовше дивитись одне одному в очі, а не заплющувати їх."
+        }
+      }
+    },
+    {
+      "id": "w013",
+      "facets": {
+        "kind": [
+          "mood"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Whispering how it feels",
+          "body": "They quietly tell each other what feels good and how much they want this, right as it's happening."
+        },
+        "uk": {
+          "title": "Шепотіти про відчуття",
+          "body": "Вони тихо кажуть одне одному, що саме подобається і як сильно цього хочеться, просто в процесі."
+        }
+      }
+    },
+    {
+      "id": "w014",
+      "facets": {
+        "kind": [
+          "mood"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Talking first, then more",
+          "body": "It starts with quiet conversation and cuddling on the bed, and turns into something more on its own."
+        },
+        "uk": {
+          "title": "Спершу розмова",
+          "body": "Все починається з тихої розмови та обіймів у ліжку, і поступово саме переростає у щось більше."
+        }
+      }
+    },
+    {
+      "id": "w015",
+      "facets": {
+        "kind": [
+          "mood"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Starting with laughter",
+          "body": "The evening starts playfully, with jokes and laughter, before it slows into something tender."
+        },
+        "uk": {
+          "title": "Почати зі сміху",
+          "body": "Вечір починається грайливо, з жартів і сміху, а тоді поступово переходить у щось ніжне."
+        }
+      }
+    },
+    {
+      "id": "w016",
+      "facets": {
+        "kind": [
+          "toys"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Warm oil and slow hands",
+          "body": "One partner warms massage oil in their hands and works it slowly over the other's skin before anything else."
+        },
+        "uk": {
+          "title": "Тепла олія",
+          "body": "Один партнер зігріває в долонях олію для масажу й повільно наносить її на шкіру іншого, перш ніж усе інше."
+        }
+      }
+    },
+    {
+      "id": "w017",
+      "facets": {
+        "kind": [
+          "toys"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A soft blindfold",
+          "body": "One partner wears a soft blindfold for a while, so touch, not sight, becomes the whole focus."
+        },
+        "uk": {
+          "title": "Легка пов'язка на очі",
+          "body": "Один партнер на якийсь час надягає м'яку пов'язку на очі, тож дотики стають важливішими за зір."
+        }
+      }
+    },
+    {
+      "id": "w018",
+      "facets": {
+        "kind": [
+          "scenario"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Replaying the first night",
+          "body": "The two of them deliberately recreate small details from the very first night they spent together."
+        },
+        "uk": {
+          "title": "Повторити першу ніч",
+          "body": "Двоє навмисно відтворюють дрібні деталі тієї найпершої ночі, яку провели разом."
+        }
+      }
+    },
+    {
+      "id": "w019",
+      "facets": {
+        "kind": [
+          "scenario"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Reuniting after time apart",
+          "body": "One partner has just come back after days away, and the first hour together goes to making up for lost time."
+        },
+        "uk": {
+          "title": "Возз'єднання після розлуки",
+          "body": "Один із партнерів щойно повернувся після кількох днів розлуки, і першу годину вдома вони присвячують лише одне одному."
+        }
+      }
+    },
+    {
+      "id": "w020",
+      "facets": {
+        "kind": [
+          "scenario"
+        ],
+        "intensity": [
+          "gentle"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Dressing up for each other",
+          "body": "Both of them get properly dressed up for the evening, purely for each other, with no one else around to see it."
+        },
+        "uk": {
+          "title": "Одягтися одне для одного",
+          "body": "Обоє гарно вбираються на вечір лише одне для одного, і більше ніхто цього не побачить."
+        }
+      }
+    },
+    {
+      "id": "w021",
+      "facets": {
+        "kind": [
+          "place"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "The kitchen counter",
+          "body": "Cooking gets interrupted, and the two of them end up against the kitchen counter instead of finishing dinner."
+        },
+        "uk": {
+          "title": "На кухонній стільниці",
+          "body": "Готування перериває бажання, і замість того щоб доробити вечерю, двоє опиняються біля кухонної стільниці."
+        }
+      }
+    },
+    {
+      "id": "w022",
+      "facets": {
+        "kind": [
+          "place"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "On the living room floor",
+          "body": "They move from the couch to the rug on the living room floor and stay there instead of heading to bed."
+        },
+        "uk": {
+          "title": "На підлозі у вітальні",
+          "body": "Вони переміщуються з дивана на килим у вітальні й лишаються там замість того, щоб іти до ліжка."
+        }
+      }
+    },
+    {
+      "id": "w023",
+      "facets": {
+        "kind": [
+          "place"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Parked somewhere quiet",
+          "body": "The car is parked somewhere quiet at night, and the two of them stay inside it together instead of driving straight home."
+        },
+        "uk": {
+          "title": "У припаркованому авто",
+          "body": "Машину паркують у тихому місці вночі, і двоє лишаються в ній удвох, замість того щоб їхати додому."
+        }
+      }
+    },
+    {
+      "id": "w024",
+      "facets": {
+        "kind": [
+          "place"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Inside the tent",
+          "body": "They're camping together, zipped inside the tent at night, trying to stay quiet so no one nearby hears."
+        },
+        "uk": {
+          "title": "У наметі",
+          "body": "Двоє в наметі під час походу, вночі, застібнуті всередині, і намагаються не шуміти, щоб ніхто поруч не почув."
+        }
+      }
+    },
+    {
+      "id": "w025",
+      "facets": {
+        "kind": [
+          "role"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Meeting as strangers",
+          "body": "Both of them pretend they're meeting for the very first time tonight, even though they already know each other well."
+        },
+        "uk": {
+          "title": "Знайомство як незнайомці",
+          "body": "Обоє вдають, що зустрічаються вперше цього вечора, хоча насправді давно й добре знають одне одного."
+        }
+      }
+    },
+    {
+      "id": "w026",
+      "facets": {
+        "kind": [
+          "role"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Being told what to do",
+          "body": "One partner gives clear instructions during sex, and the other follows them exactly, without adding their own."
+        },
+        "uk": {
+          "title": "Виконувати вказівки",
+          "body": "Один партнер чітко каже, що робити під час сексу, а інший точно це виконує, не додаючи нічого від себе."
+        }
+      }
+    },
+    {
+      "id": "w027",
+      "facets": {
+        "kind": [
+          "role"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Swapping who leads",
+          "body": "Whoever usually starts things stays passive tonight, and the other one takes charge instead for a change."
+        },
+        "uk": {
+          "title": "Поміняти, хто веде",
+          "body": "Той, хто зазвичай починає, сьогодні лишається пасивним, а ініціативу натомість бере другий партнер."
+        }
+      }
+    },
+    {
+      "id": "w028",
+      "facets": {
+        "kind": [
+          "role"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Praise said out loud",
+          "body": "One partner keeps praising the other out loud, in detail, throughout the whole time together."
+        },
+        "uk": {
+          "title": "Похвала вголос",
+          "body": "Один партнер весь час вголос і детально хвалить іншого за те, що відбувається між ними."
+        }
+      }
+    },
+    {
+      "id": "w029",
+      "facets": {
+        "kind": [
+          "pace"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A quick one",
+          "body": "It's fast and spontaneous, over within a few minutes, instead of a long, drawn-out session."
+        },
+        "uk": {
+          "title": "Швидко і зненацька",
+          "body": "Усе відбувається швидко й раптово, закінчується за кілька хвилин, замість тривалого й неспішного разу."
+        }
+      }
+    },
+    {
+      "id": "w030",
+      "facets": {
+        "kind": [
+          "pace"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Losing track of time",
+          "body": "Several rounds happen over a few hours, with breaks in between, and the clock stops mattering."
+        },
+        "uk": {
+          "title": "Втратити лік часу",
+          "body": "Кілька заходів відбуваються протягом кількох годин із перервами між ними, і на годинник уже ніхто не дивиться."
+        }
+      }
+    },
+    {
+      "id": "w031",
+      "facets": {
+        "kind": [
+          "pace"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Bringing them close, then stopping",
+          "body": "One partner brings the other right to the edge and deliberately stops, more than once, before finally letting them finish."
+        },
+        "uk": {
+          "title": "Довести й зупинитись",
+          "body": "Один партнер доводить іншого майже до фінішу і навмисно зупиняється, і не раз, перш ніж нарешті дозволити завершити."
+        }
+      }
+    },
+    {
+      "id": "w032",
+      "facets": {
+        "kind": [
+          "mood"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Teasing banter first",
+          "body": "A while goes into trading playful teasing and jabs before it turns into something physical."
+        },
+        "uk": {
+          "title": "Спершу пікірування",
+          "body": "Якийсь час минає в обміні грайливими підколками, перш ніж усе переходить у щось фізичне."
+        }
+      }
+    },
+    {
+      "id": "w033",
+      "facets": {
+        "kind": [
+          "mood"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Describing it out loud first",
+          "body": "Before anything happens, the two of them take turns describing out loud exactly what they want to do to each other."
+        },
+        "uk": {
+          "title": "Спершу розповісти вголос",
+          "body": "Перш ніж щось почнеться, двоє по черзі вголос розповідають одне одному, що саме хочуть зробити."
+        }
+      }
+    },
+    {
+      "id": "w034",
+      "facets": {
+        "kind": [
+          "mood"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A friendly bet",
+          "body": "The two of them make a small, playful bet, and whoever loses does whatever the winner asks in bed."
+        },
+        "uk": {
+          "title": "Невелике парі",
+          "body": "Двоє укладають між собою невелике грайливе парі, і той, хто програє, виконує в ліжку прохання переможця."
+        }
+      }
+    },
+    {
+      "id": "w035",
+      "facets": {
+        "kind": [
+          "mood"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Slow and serious",
+          "body": "The mood stays quiet and serious rather than playful, unhurried, with each of them paying close attention to the other."
+        },
+        "uk": {
+          "title": "Повільно і серйозно",
+          "body": "Настрій лишається тихим і серйозним, а не грайливим, усе відбувається неспішно, з уважною увагою одне до одного."
+        }
+      }
+    },
+    {
+      "id": "w036",
+      "facets": {
+        "kind": [
+          "toys"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Using a vibrator together",
+          "body": "A vibrator gets added to things and is used on each other during sex, rather than relying on hands alone."
+        },
+        "uk": {
+          "title": "Разом із вібратором",
+          "body": "До сексу додають вібратор і використовують його одне на одному, а не покладаються лише на руки."
+        }
+      }
+    },
+    {
+      "id": "w037",
+      "facets": {
+        "kind": [
+          "toys"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Soft wrist restraints",
+          "body": "One partner wears soft cuffs on the wrists during sex, unable to use their hands for the whole time."
+        },
+        "uk": {
+          "title": "М'які наручники",
+          "body": "Один партнер під час сексу носить м'які наручники на зап'ястях і весь цей час не може користуватись руками."
+        }
+      }
+    },
+    {
+      "id": "w038",
+      "facets": {
+        "kind": [
+          "toys"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Ice against warm skin",
+          "body": "One partner traces an ice cube slowly over the other's skin during sex, alternating cold with warmth."
+        },
+        "uk": {
+          "title": "Лід на теплій шкірі",
+          "body": "Один партнер повільно проводить кубиком льоду по шкірі іншого під час сексу, чергуючи холод із теплом."
+        }
+      }
+    },
+    {
+      "id": "w039",
+      "facets": {
+        "kind": [
+          "toys"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Something sweet to lick off",
+          "body": "Something sweet, like chocolate sauce or whipped cream, ends up on their skin and gets licked off each other."
+        },
+        "uk": {
+          "title": "Щось солодке злизати",
+          "body": "Щось солодке, як-от шоколадний соус чи збиті вершки, опиняється на шкірі, і двоє злизують це одне з одного."
+        }
+      }
+    },
+    {
+      "id": "w040",
+      "facets": {
+        "kind": [
+          "toys"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A feather to tease with",
+          "body": "One partner drags a feather slowly over the other's bare skin, just to tease before anything else starts."
+        },
+        "uk": {
+          "title": "Дражнити пір'їнкою",
+          "body": "Один партнер повільно проводить пір'їнкою по оголеній шкірі іншого, просто щоб подражнити перед усім іншим."
+        }
+      }
+    },
+    {
+      "id": "w041",
+      "facets": {
+        "kind": [
+          "scenario"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A date that leads home",
+          "body": "A proper date comes first, and anything physical only starts once the two of them are back home together."
+        },
+        "uk": {
+          "title": "Побачення, що веде додому",
+          "body": "Спершу відбувається справжнє побачення, а вже вдома, повернувшись, двоє дають волю бажанню."
+        }
+      }
+    },
+    {
+      "id": "w042",
+      "facets": {
+        "kind": [
+          "scenario"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A masseuse-and-client scene",
+          "body": "The two of them roleplay a masseuse and client appointment, staying in character until it turns into something more."
+        },
+        "uk": {
+          "title": "Сцена «масажист і клієнт»",
+          "body": "Двоє розігрують прийом у масажиста, лишаючись у ролі, доки все не переростає у щось більше."
+        }
+      }
+    },
+    {
+      "id": "w043",
+      "facets": {
+        "kind": [
+          "scenario"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Seduced out of nowhere",
+          "body": "On an otherwise completely ordinary evening, one partner suddenly starts seducing the other with no warning at all."
+        },
+        "uk": {
+          "title": "Спокусити зненацька",
+          "body": "У цілком звичайний вечір один партнер раптово, без жодного попередження, починає спокушати іншого."
+        }
+      }
+    },
+    {
+      "id": "w044",
+      "facets": {
+        "kind": [
+          "scenario"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Messages building up to it",
+          "body": "Flirty messages go back and forth throughout the day while the two of them are apart, so anticipation is already high by evening."
+        },
+        "uk": {
+          "title": "Переписка напередодні",
+          "body": "Протягом дня, поки двоє не разом, між ними літають грайливі повідомлення, і до вечора напруга вже висока."
+        }
+      }
+    },
+    {
+      "id": "w045",
+      "facets": {
+        "kind": [
+          "scenario"
+        ],
+        "intensity": [
+          "medium"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Recreating a favorite memory",
+          "body": "A specific moment from a trip or a night together, one they both remember fondly, gets deliberately recreated."
+        },
+        "uk": {
+          "title": "Повторити улюблений спогад",
+          "body": "Конкретний момент із подорожі чи вечора, який обоє тепло згадують, навмисно відтворюється знову."
+        }
+      }
+    },
+    {
+      "id": "w046",
+      "facets": {
+        "kind": [
+          "place"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "On the balcony at night",
+          "body": "The two of them have sex on the balcony at night, aware that someone in a nearby building might catch a glimpse."
+        },
+        "uk": {
+          "title": "На балконі вночі",
+          "body": "Двоє займаються сексом на балконі вночі, усвідомлюючи, що хтось у сусідньому будинку може випадково побачити."
+        }
+      }
+    },
+    {
+      "id": "w047",
+      "facets": {
+        "kind": [
+          "place"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Outdoors after dark",
+          "body": "A secluded spot outside, like a beach or the woods, becomes the place for sex once it's fully dark."
+        },
+        "uk": {
+          "title": "Просто неба вночі",
+          "body": "Відлюдне місце просто неба, як-от пляж чи ліс, стає місцем для сексу, коли вже зовсім темно."
+        }
+      }
+    },
+    {
+      "id": "w048",
+      "facets": {
+        "kind": [
+          "role"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A full power exchange",
+          "body": "One partner takes complete control for the whole session, and the other gives it up entirely, no matter what."
+        },
+        "uk": {
+          "title": "Повна влада одному",
+          "body": "Один партнер бере на себе повний контроль на весь час, а інший цілком віддає цю владу, хоч би що сталося."
+        }
+      }
+    },
+    {
+      "id": "w049",
+      "facets": {
+        "kind": [
+          "role"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Waiting for permission",
+          "body": "One partner isn't allowed to touch or move until given clear permission, and has to ask for it every single time."
+        },
+        "uk": {
+          "title": "Чекати на дозвіл",
+          "body": "Один партнер не має права торкатись чи рухатись без чіткого дозволу і щоразу мусить його просити."
+        }
+      }
+    },
+    {
+      "id": "w050",
+      "facets": {
+        "kind": [
+          "role"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Following strict rules",
+          "body": "One partner sets strict rules for the night and enforces them firmly, while the other obeys without question."
+        },
+        "uk": {
+          "title": "Суворі правила на ніч",
+          "body": "Один партнер встановлює на ніч суворі правила й твердо стежить за їх виконанням, а інший підкоряється без заперечень."
+        }
+      }
+    },
+    {
+      "id": "w051",
+      "facets": {
+        "kind": [
+          "pace"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Denied for as long as possible",
+          "body": "One partner is brought close again and again but isn't allowed to finish until the other decides it's time."
+        },
+        "uk": {
+          "title": "Стримувати якнайдовше",
+          "body": "Одного партнера знову і знову доводять до межі, але не дозволяють завершити, доки інший не вирішить, що вже час."
+        }
+      }
+    },
+    {
+      "id": "w052",
+      "facets": {
+        "kind": [
+          "pace"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Hard and fast, no pausing",
+          "body": "Both of them want it rough and fast from the very start, with barely a single pause until it's completely over."
+        },
+        "uk": {
+          "title": "Різко й швидко без пауз",
+          "body": "Обоє з самого початку хочуть грубо й швидко, майже без жодної паузи аж до самого кінця."
+        }
+      }
+    },
+    {
+      "id": "w053",
+      "facets": {
+        "kind": [
+          "mood"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Desperate for each other",
+          "body": "Both of them want each other so badly that nothing about it feels calm or careful, it feels almost desperate."
+        },
+        "uk": {
+          "title": "Відчайдушно одне до одного",
+          "body": "Обоє так сильно хочуть одне одного, що в цьому немає нічого спокійного чи обережного — це майже відчайдушно."
+        }
+      }
+    },
+    {
+      "id": "w054",
+      "facets": {
+        "kind": [
+          "toys"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A paddle or flogger",
+          "body": "One partner uses a paddle or a flogger on the other during sex, at an intensity agreed on beforehand."
+        },
+        "uk": {
+          "title": "Батіг чи шльопалка",
+          "body": "Один партнер під час сексу використовує на іншому шльопалку чи батіг з інтенсивністю, узгодженою заздалегідь."
+        }
+      }
+    },
+    {
+      "id": "w055",
+      "facets": {
+        "kind": [
+          "toys"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Tied up with rope",
+          "body": "One partner is tied up with rope, unable to move much at all, for the entire encounter from start to finish."
+        },
+        "uk": {
+          "title": "Зв'язаний мотузкою",
+          "body": "Одного партнера зв'язують мотузкою так, що він майже не може рухатись, і це триває весь час, від початку до кінця."
+        }
+      }
+    },
+    {
+      "id": "w056",
+      "facets": {
+        "kind": [
+          "toys"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A remote toy while out together",
+          "body": "One partner wears a small remote-controlled toy while the two of them are out in public together, controlled only by the other."
+        },
+        "uk": {
+          "title": "Іграшка з пультом на прогулянці",
+          "body": "Один партнер носить невелику іграшку з дистанційним керуванням, поки двоє разом надворі, а керує нею лише другий партнер."
+        }
+      }
+    },
+    {
+      "id": "w057",
+      "facets": {
+        "kind": [
+          "scenario"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "A playful capture fantasy",
+          "body": "In a scenario agreed on beforehand, one partner 'catches' the other and takes charge from that moment on."
+        },
+        "uk": {
+          "title": "Гра у «викрадення»",
+          "body": "За сценарієм, узгодженим заздалегідь, один партнер «ловить» іншого і відтоді бере ситуацію під повний контроль."
+        }
+      }
+    },
+    {
+      "id": "w058",
+      "facets": {
+        "kind": [
+          "scenario"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Teased in public, finished at home",
+          "body": "One partner teases the other the whole time they're out in public together, promising it's only resolved once they're home."
+        },
+        "uk": {
+          "title": "Дражнити на людях, завершити вдома",
+          "body": "Один партнер дражнить іншого весь час, поки вони разом на людях, обіцяючи, що все вирішиться лише вдома."
+        }
+      }
+    },
+    {
+      "id": "w059",
+      "facets": {
+        "kind": [
+          "scenario"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "In charge for the whole day",
+          "body": "One partner stays in charge of the other for an entire day, deciding small things right up until the two of them finally have sex."
+        },
+        "uk": {
+          "title": "Головний на весь день",
+          "body": "Один партнер лишається головним над іншим цілий день, вирішуючи дрібниці аж до моменту, коли двоє нарешті займаються сексом."
+        }
+      }
+    },
+    {
+      "id": "w060",
+      "facets": {
+        "kind": [
+          "scenario"
+        ],
+        "intensity": [
+          "bold"
+        ]
+      },
+      "text": {
+        "en": {
+          "title": "Blindfolded and completely guided",
+          "body": "One partner is blindfolded and restrained for the whole scene, relying entirely on the other's voice and touch."
+        },
+        "uk": {
+          "title": "З пов'язкою, під повним контролем",
+          "body": "Одного партнера на всю сцену осліплюють пов'язкою і фіксують, і він цілком покладається на голос і дотики іншого."
+        }
+      }
+    }
+  ]
+}
