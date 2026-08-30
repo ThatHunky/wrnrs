@@ -1,7 +1,6 @@
 package wishlist
 
 import (
-	"fmt"
 	"strings"
 
 	"wrnrs/internal/catalog"
@@ -57,7 +56,7 @@ func HubKeyboard(bundle *i18n.Bundle, language string, hasPair bool, matches int
 	matchesFormat := bundle.Text(language, "wish.hub.matches")
 	matchesText := stripCount(matchesFormat)
 	if hasPair {
-		matchesText = fmt.Sprintf(matchesFormat, matches)
+		matchesText = sprintfSafe(matchesFormat, matches)
 	}
 
 	menuText := "⌂ Меню"
@@ -119,7 +118,7 @@ func SwipeCaption(bundle *i18n.Bundle, language string, item catalog.Item, answe
 	if bundle != nil {
 		progressFormat = bundle.Text(language, "wish.hub.progress")
 	}
-	lines = append(lines, fmt.Sprintf(progressFormat, answered, total))
+	lines = append(lines, sprintfSafe(progressFormat, answered, total))
 
 	return strings.Join(lines, "\n\n")
 }

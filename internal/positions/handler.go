@@ -403,18 +403,22 @@ func seedFor(pair *storage.Pair, userID int64) int64 {
 // database and depend on the pair, so they can never be expressed as a
 // catalog.Filter facet.
 //
-// A MatchesOnly state with no active pair narrows to nothing rather than
-// erroring — the toggle itself is always presented locked without a pair
-// (see FiltersKeyboardWithMatches), so reaching this branch at all can only
-// mean a stale/forged callback replaying a MatchesOnly=true state saved from
-// back when the caller still had one.
+// A MatchesOnly state with no active pair treats the filter as not
+// applicable — returning the full (unfiltered-by-matches) selection —
+// rather than narrowing to nothing. The toggle can only be turned ON with a
+// pair (see FiltersKeyboardWithMatches, which presents it locked in that
+// case), but a pair that existed when it was turned on can dissolve later
+// without touching this state at all (see handleMatchesToggle): without
+// this fallback, a user who breaks up while MatchesOnly=true would see an
+// empty selection on every screen until they specifically reopened Filters
+// and tapped the toggle off.
 func (h *Handler) visibleItems(ctx context.Context, state BrowseState, marks map[string]storage.PositionMark, pair *storage.Pair) ([]catalog.Item, error) {
 	items := h.service.VisibleWithMarks(state.Filter, marks)
 	if !state.MatchesOnly {
 		return items, nil
 	}
 	if pair == nil {
-		return nil, nil
+		return items, nil
 	}
 	matches, err := h.repo.PairWishMatches(ctx, pair.ID)
 	if err != nil {
@@ -686,20 +690,33 @@ func parseWishAnswer(raw string) (storage.WishAnswer, bool) {
 }
 
 // handleMatchesToggle flips BrowseState.MatchesOnly and re-renders the
-// filters screen. Without an active pair the toggle is a no-op refresh —
-// FiltersKeyboardWithMatches already presents it locked in that case, so
-// reaching this handler at all without a pair can only be a stale/forged
-// callback.
+// filters screen. Turning the filter ON requires an active pair —
+// FiltersKeyboardWithMatches already presents the button locked without one,
+// so reaching this handler wanting to turn it on without a pair can only be
+// a stale/forged callback, and is a no-op. Turning it OFF is always allowed,
+// pair or no pair: a user can lose their pair (e.g. pair:break_confirm)
+// while MatchesOnly is still true from before, and refusing the transition
+// to false in that case would leave them permanently stuck looking at an
+// empty selection with no interactive way to escape it (see visibleItems'
+// own fallback for the same scenario).
 func (h *Handler) handleMatchesToggle(ctx context.Context, cb *telegram.CallbackQuery, chatID, userID int64, language string) error {
 	pair, err := h.repo.ActivePairForUser(ctx, userID)
 	if err != nil {
 		return err
 	}
-	if pair == nil {
+	state := h.loadState(ctx, userID)
+	switch {
+	case pair != nil:
+		state.MatchesOnly = !state.MatchesOnly
+	case state.MatchesOnly:
+		// No pair, but the filter is currently on: always let them turn it
+		// off.
+		state.MatchesOnly = false
+	default:
+		// No pair and the filter is already off: nothing to do — the UI
+		// never offers an interactive way to turn it on without a pair.
 		return h.showFilters(ctx, cb, chatID, userID, language)
 	}
-	state := h.loadState(ctx, userID)
-	state.MatchesOnly = !state.MatchesOnly
 	state.Index = 0
 	h.saveState(ctx, userID, state)
 	return h.showFilters(ctx, cb, chatID, userID, language)

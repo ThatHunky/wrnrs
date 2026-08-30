@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -161,12 +162,21 @@ func run(logger *slog.Logger) error {
 	// boot. Register() failing is different: an empty id or a colliding
 	// callback prefix is a programming mistake in this wiring, not a
 	// runtime content problem, so it is returned and fails startup loudly.
+	// positionTitle is internal/wishlist's cross-module title lookup for
+	// position ids on its matches/mine screens (see wishlist.HandlerOptions.
+	// PositionTitle) — set below only once the positions catalog has loaded
+	// and validated, so a disabled positions module correctly leaves this
+	// nil and wishlist falls back to its own "wish.item.position" copy
+	// instead of resolving titles from a catalog that was never wired up.
+	var positionTitle func(string) (string, bool)
+
 	positionsCatalog, err := loadPositionsCatalog(cfg.PositionsCatalogPath)
 	if err != nil {
 		logger.Warn("positions catalog unavailable; module disabled", "err", err)
 	} else if err := positionsCatalog.Validate([]string{"uk", "en"}); err != nil {
 		logger.Warn("positions catalog invalid; module disabled", "err", err)
 	} else {
+		positionTitle = positionTitleResolver(positionsCatalog)
 		positionsOptions := buildPositionsHandlerOptions(
 			positions.NewService(positions.ServiceOptions{Catalog: positionsCatalog}),
 			positionsCatalog,
@@ -210,15 +220,16 @@ func run(logger *slog.Logger) error {
 		logger.Warn("wishes catalog invalid; module disabled", "err", err)
 	} else {
 		wishlistHandler := wishlist.NewHandler(wishlist.HandlerOptions{
-			Service:    wishlist.NewService(wishlist.ServiceOptions{Catalog: wishesCatalog}),
-			Repository: repo,
-			Bot:        bot,
-			I18n:       bundle,
-			Logger:     logger,
+			Service:       wishlist.NewService(wishlist.ServiceOptions{Catalog: wishesCatalog}),
+			Repository:    repo,
+			Bot:           bot,
+			I18n:          bundle,
+			Logger:        logger,
+			PositionTitle: positionTitle,
 		})
 		if err := application.Registry().Register(modules.Module{
 			ID:             "wishlist",
-			TitleKey:       "wish.hub.title",
+			TitleKey:       "module.wishlist",
 			Icon:           "💛",
 			CallbackPrefix: "wish:",
 			Gate:           modules.Gate{Needs18Plus: true, NeedsMature: true},
@@ -534,6 +545,40 @@ func loadPositionsCatalog(path string) (*catalog.Catalog, error) {
 	}
 	defer file.Close()
 	return catalog.Load(file)
+}
+
+// positionTitleResolver adapts a loaded positions catalog into the plain
+// func value wishlist.HandlerOptions.PositionTitle expects, so
+// internal/wishlist never needs to import internal/positions or
+// internal/catalog to render a position's title on its matches/mine
+// screens. It carries no language argument by design — the resolver's job
+// is "does this position id still exist, and what's a reasonable title for
+// it", not full per-viewer localization — so it always prefers the uk text,
+// then en, then whatever language happens to be present, mirroring the
+// "uk first" default positions.Handler.language itself falls back to when
+// nothing else is known.
+func positionTitleResolver(cat *catalog.Catalog) func(string) (string, bool) {
+	if cat == nil {
+		return nil
+	}
+	return func(id string) (string, bool) {
+		item, ok := cat.Item(id)
+		if !ok {
+			return "", false
+		}
+		if text, ok := item.Text["uk"]; ok && strings.TrimSpace(text.Title) != "" {
+			return text.Title, true
+		}
+		if text, ok := item.Text["en"]; ok && strings.TrimSpace(text.Title) != "" {
+			return text.Title, true
+		}
+		for _, text := range item.Text {
+			if strings.TrimSpace(text.Title) != "" {
+				return text.Title, true
+			}
+		}
+		return "", false
+	}
 }
 
 // loadWishesCatalog only opens and decodes the file; like

@@ -27,6 +27,7 @@ func testBundle() *i18n.Bundle {
 		"wish.answer.curious": "🤔 Цікаво",
 		"wish.answer.no":      "🚫 Ні",
 		"wish.answer.skip":    "⏭ Пропустити",
+		"wish.item.position":  "Поза №%s",
 	}})
 	return b
 }
@@ -145,6 +146,49 @@ func TestSwipeCaptionShowsTitleAndProgress(t *testing.T) {
 	}
 }
 
+// TestSwipeCaptionMissingProgressKeyDegradesReadably and
+// TestHubKeyboardMissingMatchesKeyDegradesReadably pin the fix for the
+// review finding that keyboards.go called bundle.Text(...) straight into
+// fmt.Sprintf: since Bundle.Text falls back to returning the raw key on a
+// miss, and a raw key like "wish.hub.progress" carries no %-verbs at all,
+// fmt.Sprintf(key, answered, total) rendered garbage — literally
+// "wish.hub.progress%!(EXTRA int=3, int=60)" — instead of just the key. Both
+// call sites must use sprintfSafe instead, which recognises a template with
+// no %-verbs and returns it untouched rather than mangling it with fmt's
+// MISSING/EXTRA noise.
+func TestSwipeCaptionMissingProgressKeyDegradesReadably(t *testing.T) {
+	bundle := i18n.NewBundle() // no catalogs at all: every Text() call misses
+	item := catalog.Item{ID: "w007", Text: map[string]catalog.ItemText{"uk": {Title: "Свічки"}}}
+
+	caption := wishlist.SwipeCaption(bundle, "uk", item, 3, 60)
+
+	if strings.Contains(caption, "%!") {
+		t.Fatalf("caption %q is garbled by a missing i18n key, want the raw key left untouched", caption)
+	}
+	if !strings.Contains(caption, "wish.hub.progress") {
+		t.Fatalf("caption %q does not degrade to the raw missing key", caption)
+	}
+}
+
+func TestHubKeyboardMissingMatchesKeyDegradesReadably(t *testing.T) {
+	bundle := i18n.NewBundle() // no catalogs at all: every Text() call misses
+
+	markup := wishlist.HubKeyboard(bundle, "uk", true, 3)
+
+	var text string
+	for _, row := range markup.InlineKeyboard {
+		for _, b := range row {
+			text += b.Text + " "
+		}
+	}
+	if strings.Contains(text, "%!") {
+		t.Fatalf("hub keyboard text %q is garbled by a missing i18n key, want the raw key left untouched", text)
+	}
+	if !strings.Contains(text, "wish.hub.matches") {
+		t.Fatalf("hub keyboard text %q does not degrade to the raw missing key", text)
+	}
+}
+
 // --- Handler routing tests (no Telegram network involved: fakeBot and
 // fakeWishRepo are in-memory stubs, in the same style as
 // internal/positions/handler_test.go's fakePhotoBot) --------------------
@@ -225,6 +269,21 @@ func newTestHandler(repo *fakeWishRepo, bot *fakeBot) *wishlist.Handler {
 		Repository: repo,
 		Bot:        bot,
 		I18n:       testBundle(),
+	})
+}
+
+// newTestHandlerWithPositionTitle is newTestHandler's counterpart for the
+// position-row rendering tests below: it wires PositionTitle so itemLabel
+// can resolve a WishKindPosition id through it instead of falling back to
+// the "wish.item.position" i18n key.
+func newTestHandlerWithPositionTitle(repo *fakeWishRepo, bot *fakeBot, resolver func(string) (string, bool)) *wishlist.Handler {
+	service := wishlist.NewService(wishlist.ServiceOptions{Catalog: testCatalog()})
+	return wishlist.NewHandler(wishlist.HandlerOptions{
+		Service:       service,
+		Repository:    repo,
+		Bot:           bot,
+		I18n:          testBundle(),
+		PositionTitle: resolver,
 	})
 }
 
@@ -400,6 +459,137 @@ func TestShowMatchesRendersStrongAndNonStrongDistinctly(t *testing.T) {
 	}
 	if strongLine == otherLine {
 		t.Fatalf("strong and non-strong match lines render identically: %q", strongLine)
+	}
+}
+
+// TestShowMatchesRendersPositionRowWithResolver pins the fix for the review
+// finding that a position match rendered as a bare numeric id (e.g. "🔥
+// 042") next to a wish's real title. With PositionTitle wired, the matches
+// screen must show the resolved title instead of the id.
+func TestShowMatchesRendersPositionRowWithResolver(t *testing.T) {
+	repo := &fakeWishRepo{
+		pair: &storage.Pair{ID: 1, UserAID: 1, UserBID: 2},
+		matches: []storage.WishMatch{
+			{ItemKind: storage.WishKindPosition, ItemID: "042", Strong: true},
+		},
+	}
+	bot := &fakeBot{}
+	resolver := func(id string) (string, bool) {
+		if id == "042" {
+			return "Ложки", true
+		}
+		return "", false
+	}
+	h := newTestHandlerWithPositionTitle(repo, bot, resolver)
+
+	if err := h.HandleCallback(context.Background(), privateCallback(1, "wish:matches")); err != nil {
+		t.Fatalf("HandleCallback: %v", err)
+	}
+	text := lastText(bot)
+	if !strings.Contains(text, "Ложки") {
+		t.Fatalf("matches text %q does not contain the resolved position title", text)
+	}
+	if strings.Contains(text, "042") {
+		t.Fatalf("matches text %q still shows the bare position id despite a resolver", text)
+	}
+}
+
+// TestShowMatchesRendersPositionRowWithoutResolverFallsBackToLabel pins the
+// other half: with no PositionTitle wired (or the resolver misses), the
+// position row must still not be a bare number — it degrades to the
+// i18n-labelled "wish.item.position" form instead.
+func TestShowMatchesRendersPositionRowWithoutResolverFallsBackToLabel(t *testing.T) {
+	repo := &fakeWishRepo{
+		pair: &storage.Pair{ID: 1, UserAID: 1, UserBID: 2},
+		matches: []storage.WishMatch{
+			{ItemKind: storage.WishKindPosition, ItemID: "042", Strong: true},
+		},
+	}
+	bot := &fakeBot{}
+	h := newTestHandler(repo, bot) // no PositionTitle wired
+
+	if err := h.HandleCallback(context.Background(), privateCallback(1, "wish:matches")); err != nil {
+		t.Fatalf("HandleCallback: %v", err)
+	}
+	text := lastText(bot)
+	if !strings.Contains(text, "№042") {
+		t.Fatalf("matches text %q does not contain the labelled position fallback (want something like %q)", text, "Поза №042")
+	}
+
+	var matchLine string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "🔥") {
+			matchLine = line
+		}
+	}
+	if matchLine == "" {
+		t.Fatalf("matches text %q has no strong-match line", text)
+	}
+	if strings.TrimSpace(strings.TrimPrefix(matchLine, "🔥")) == "042" {
+		t.Fatalf("match line %q rendered as a bare numeric id, not a labelled fallback", matchLine)
+	}
+}
+
+// TestShowMineRendersPositionRowWithResolver and
+// TestShowMineRendersPositionRowWithoutResolverFallsBackToLabel are showMine's
+// counterparts to the showMatches tests above: showMine resolves labels
+// through the exact same itemLabel helper, so the same bare-id bug and fix
+// apply there too.
+func TestShowMineRendersPositionRowWithResolver(t *testing.T) {
+	repo := &fakeWishRepo{
+		answers: map[string]storage.WishAnswer{
+			wishlist.AnswerKey(storage.WishKindPosition, "042"): storage.AnswerWant,
+		},
+	}
+	bot := &fakeBot{}
+	resolver := func(id string) (string, bool) {
+		if id == "042" {
+			return "Ложки", true
+		}
+		return "", false
+	}
+	h := newTestHandlerWithPositionTitle(repo, bot, resolver)
+
+	if err := h.HandleCallback(context.Background(), privateCallback(1, "wish:mine")); err != nil {
+		t.Fatalf("HandleCallback: %v", err)
+	}
+	text := lastText(bot)
+	if !strings.Contains(text, "Ложки") {
+		t.Fatalf("mine text %q does not contain the resolved position title", text)
+	}
+	if strings.Contains(text, "042") {
+		t.Fatalf("mine text %q still shows the bare position id despite a resolver", text)
+	}
+}
+
+func TestShowMineRendersPositionRowWithoutResolverFallsBackToLabel(t *testing.T) {
+	repo := &fakeWishRepo{
+		answers: map[string]storage.WishAnswer{
+			wishlist.AnswerKey(storage.WishKindPosition, "042"): storage.AnswerWant,
+		},
+	}
+	bot := &fakeBot{}
+	h := newTestHandler(repo, bot) // no PositionTitle wired
+
+	if err := h.HandleCallback(context.Background(), privateCallback(1, "wish:mine")); err != nil {
+		t.Fatalf("HandleCallback: %v", err)
+	}
+	text := lastText(bot)
+	if !strings.Contains(text, "№042") {
+		t.Fatalf("mine text %q does not contain the labelled position fallback (want something like %q)", text, "Поза №042")
+	}
+
+	var itemLine string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "•") {
+			itemLine = line
+		}
+	}
+	if itemLine == "" {
+		t.Fatalf("mine text %q has no bullet item line", text)
+	}
+	if strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(itemLine), "•")) == "042" {
+		t.Fatalf("mine item line %q rendered as a bare numeric id, not a labelled fallback", itemLine)
 	}
 }
 

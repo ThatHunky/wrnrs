@@ -447,6 +447,93 @@ func TestHandleMatchesToggleWithoutAPairIsANoOp(t *testing.T) {
 	}
 }
 
+// TestHandleMatchesToggleCanBeTurnedOffAfterBreakup pins the fix for the
+// review's stuck-filter finding: a user turns MatchesOnly on while paired,
+// the pair then dissolves (e.g. pair:break_confirm) without touching
+// BrowseState at all, and the toggle must still let them turn it back off —
+// unlike TestHandleMatchesToggleWithoutAPairIsANoOp above, which pins that
+// turning it ON without a pair stays refused. It also exercises visibleItems'
+// second-layer fallback: even before the user gets around to tapping the
+// toggle off, pos:browse must not render the "nothing to show" empty screen
+// just because the pair that MatchesOnly depended on is gone.
+func TestHandleMatchesToggleCanBeTurnedOffAfterBreakup(t *testing.T) {
+	cat := manyPositionItems(3)
+	bot := &markupRecordingBot{}
+	repo := &wishRepo{pair: &storage.Pair{ID: 80}}
+	state := newMemStateStore()
+	h := positions.NewHandler(positions.HandlerOptions{
+		Service:    positions.NewService(positions.ServiceOptions{Catalog: cat}),
+		Catalog:    cat,
+		Repository: repo,
+		Bot:        bot,
+		State:      state,
+		I18n:       i18n.NewBundle(),
+	})
+
+	const userID = int64(30006)
+	toggle := &telegram.CallbackQuery{From: telegram.User{ID: userID}, Data: "pos:matches:toggle"}
+	browse := &telegram.CallbackQuery{From: telegram.User{ID: userID}, Data: "pos:browse:0"}
+
+	// Turn matches-only ON while still paired.
+	if err := h.HandleCallback(context.Background(), toggle); err != nil {
+		t.Fatalf("HandleCallback pos:matches:toggle (on): %v", err)
+	}
+	raw, err := state.ModuleState(context.Background(), userID, "positions")
+	if err != nil {
+		t.Fatalf("ModuleState: %v", err)
+	}
+	decoded, err := positions.DecodeState(raw)
+	if err != nil {
+		t.Fatalf("DecodeState: %v", err)
+	}
+	if !decoded.MatchesOnly {
+		t.Fatal("pos:matches:toggle did not turn MatchesOnly on while paired")
+	}
+
+	// The pair breaks up — nothing about BrowseState changes.
+	repo.pair = nil
+
+	// Second layer: browsing must still show content, not the empty screen.
+	if err := h.HandleCallback(context.Background(), browse); err != nil {
+		t.Fatalf("HandleCallback pos:browse:0 after breakup: %v", err)
+	}
+	if !strings.Contains(bot.lastText(), "Позиція") {
+		t.Fatalf("browse after breakup shows no content: %q", bot.lastText())
+	}
+
+	// Turning the filter OFF must succeed even without a pair.
+	if err := h.HandleCallback(context.Background(), toggle); err != nil {
+		t.Fatalf("HandleCallback pos:matches:toggle (off, no pair): %v", err)
+	}
+	raw, err = state.ModuleState(context.Background(), userID, "positions")
+	if err != nil {
+		t.Fatalf("ModuleState: %v", err)
+	}
+	decoded, err = positions.DecodeState(raw)
+	if err != nil {
+		t.Fatalf("DecodeState: %v", err)
+	}
+	if decoded.MatchesOnly {
+		t.Fatal("pos:matches:toggle without a pair failed to turn MatchesOnly off after a breakup")
+	}
+
+	button, found := buttonByCallback(bot.lastMarkup(), "pos:matches:toggle")
+	if !found {
+		t.Fatalf("filters keyboard %+v is missing the pos:matches:toggle button", bot.lastMarkup().InlineKeyboard)
+	}
+	if strings.Contains(button.Text, "✓") {
+		t.Fatalf("matches-only toggle button %q still shows checked after being turned off", button.Text)
+	}
+
+	// The browser must show content again.
+	if err := h.HandleCallback(context.Background(), browse); err != nil {
+		t.Fatalf("HandleCallback pos:browse:0 after turning off: %v", err)
+	}
+	if !strings.Contains(bot.lastText(), "Позиція") {
+		t.Fatalf("browse after turning matches-only off shows no content: %q", bot.lastText())
+	}
+}
+
 // memStateStore is a minimal in-process StateStore so BrowseState (and, in
 // particular, its Draw counter) actually persists across calls the way
 // Redis would in production. Without it, loadState resets to the zero value

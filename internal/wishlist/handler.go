@@ -41,8 +41,8 @@ type Repository interface {
 }
 
 // HandlerOptions configures a Handler. Service, Repository, Bot and I18n are
-// required; Logger and Now are optional and default to slog.Default and
-// time.Now respectively.
+// required; Logger, Now and PositionTitle are optional. Logger and Now
+// default to slog.Default and time.Now respectively.
 type HandlerOptions struct {
 	Service    *Service
 	Repository Repository
@@ -51,18 +51,30 @@ type HandlerOptions struct {
 	Logger     *slog.Logger
 	// Now is injected for tests; defaults to time.Now.
 	Now func() time.Time
+	// PositionTitle resolves the display title for an item id from the
+	// positions catalog — a plain func value, deliberately not
+	// *positions.Service or *catalog.Catalog, because this package must
+	// never import internal/positions (see the package-level boundary this
+	// module and internal/positions both document on their Repository
+	// interfaces). cmd/wrnrs/main.go injects it once both catalogs are
+	// loaded. Left nil (the zero value — e.g. the positions catalog failed
+	// to load, or a test constructs HandlerOptions directly), itemLabel
+	// falls back to the "wish.item.position" i18n key instead of a bare
+	// item id.
+	PositionTitle func(id string) (string, bool)
 }
 
 // Handler implements modules.Handler for the wishlist module: the hub, the
 // swipe queue, per-answer writes, matches and a self-only review of one's
 // own answers.
 type Handler struct {
-	service *Service
-	repo    Repository
-	bot     Bot
-	i18n    *i18n.Bundle
-	logger  *slog.Logger
-	now     func() time.Time
+	service       *Service
+	repo          Repository
+	bot           Bot
+	i18n          *i18n.Bundle
+	logger        *slog.Logger
+	now           func() time.Time
+	positionTitle func(id string) (string, bool)
 }
 
 // NewHandler builds a Handler. It panics only on a genuinely unusable
@@ -84,12 +96,13 @@ func NewHandler(options HandlerOptions) *Handler {
 		now = time.Now
 	}
 	return &Handler{
-		service: options.Service,
-		repo:    options.Repository,
-		bot:     options.Bot,
-		i18n:    options.I18n,
-		logger:  logger,
-		now:     now,
+		service:       options.Service,
+		repo:          options.Repository,
+		bot:           options.Bot,
+		i18n:          options.I18n,
+		logger:        logger,
+		now:           now,
+		positionTitle: options.PositionTitle,
 	}
 }
 
@@ -353,20 +366,36 @@ func (h *Handler) matchLine(language string, m storage.WishMatch) string {
 	return "• " + label
 }
 
-// itemLabel resolves a display label for one item id. Only WishKindWish ids
-// are looked up in h.service, the only catalog this module holds; anything
-// else (including WishKindPosition, in case a future module ever writes
-// wish answers against the positions catalog) falls back to the bare id
-// rather than guessing at a title it cannot verify.
+// itemLabel resolves a display label for one item id. WishKindWish ids are
+// looked up in h.service, the only catalog this module holds directly.
+// WishKindPosition ids — the expected common case now that internal/positions
+// puts a wish button on every one of its 519 cards — are resolved through
+// h.positionTitle, the optional cross-module title lookup injected by
+// cmd/wrnrs/main.go; this package must never import internal/positions
+// itself. When that resolver is absent (not wired, e.g. in a test that
+// builds HandlerOptions directly) or it misses (a stale/removed catalog id),
+// this falls back to the i18n-labelled "wish.item.position" form rather than
+// a bare number — a raw id like "042" reads as noise next to a real title
+// like "перше" on the matches and mine screens.
 func (h *Handler) itemLabel(language string, kind storage.WishItemKind, itemID string) string {
-	if kind == storage.WishKindWish {
+	switch kind {
+	case storage.WishKindWish:
 		if item, ok := h.service.Item(itemID); ok {
 			if title, _ := itemTitleAndBody(language, item); title != "" {
 				return title
 			}
 		}
+		return itemID
+	case storage.WishKindPosition:
+		if h.positionTitle != nil {
+			if title, ok := h.positionTitle(itemID); ok && title != "" {
+				return title
+			}
+		}
+		return sprintfSafe(h.i18n.Text(language, "wish.item.position"), itemID)
+	default:
+		return itemID
 	}
-	return itemID
 }
 
 // showMine renders the caller's own answers, grouped by answer value

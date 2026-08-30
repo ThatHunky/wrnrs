@@ -101,6 +101,7 @@
     "gate.needs_pair": "Спочатку створи пару — цей розділ для двох.",
     "gate.needs_premium": "Цей розділ доступний з преміумом.",
     "module.positions": "Пози",
+    "module.wishlist": "Бажання",
     "positions.hub": "Пози\n\nКрути навмання, гортай каталог або став фільтри.",
     "positions.attribution": "Ілюстрації: Sex Positions Club — https://sexpositions.club",
     "positions.empty": "За такими фільтрами нічого немає. Спробуй прибрати щось.",
@@ -191,6 +192,7 @@
     "wish.matches.needs_pair": "Збіги зʼявляться, коли буде пара. Відмічати можна вже зараз — відповіді збережуться.",
     "wish.mine.title": "Мої відповіді",
     "wish.mine.empty": "Ти ще нічого не відмічав.",
-    "wish.privacy_note": "Твоє «ні» завжди залишається лише твоїм."
+    "wish.privacy_note": "Твоє «ні» завжди залишається лише твоїм.",
+    "wish.item.position": "Поза №%s"
   }
 }
