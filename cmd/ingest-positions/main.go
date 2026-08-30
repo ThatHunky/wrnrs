@@ -108,32 +108,37 @@ func main() {
 			continue
 		}
 
-		item, unknown, err := buildItem(page, tax)
+		unknown, err := processPage(number, page, tax, func() ([]byte, int, error) {
+			imageBytes, imageStatus, fetchErr := fetch(client, page.ImageURL)
+			time.Sleep(*delay)
+			return imageBytes, imageStatus, fetchErr
+		}, *imagesDir, items, state, *resumePath, *out)
 		if err != nil {
-			log.Printf("position %d: build item: %v", number, err)
+			log.Printf("position %d: %v", number, err)
 			continue
 		}
-		for _, slug := range unknown {
-			unknownSlugs[slug] = true
-		}
-
-		imageBytes, imageStatus, err := fetch(client, page.ImageURL)
-		time.Sleep(*delay)
-		if err != nil || imageStatus != http.StatusOK {
-			log.Printf("position %d: image fetch failed (status %d): %v", number, imageStatus, err)
+		if len(unknown) > 0 {
+			// Do NOT mark this page done: its item was neither built nor
+			// persisted, so once the operator extends the taxonomy a later
+			// run must re-fetch it rather than silently skip it forever.
+			for _, slug := range unknown {
+				unknownSlugs[slug] = true
+			}
+			log.Printf("position %d: skipped, unknown tag slugs: %s", number, strings.Join(unknown, ", "))
 			continue
 		}
-		target := filepath.Join(*imagesDir, filepath.Base(item.Media.Key))
-		if err := os.WriteFile(target, imageBytes, 0o644); err != nil {
-			log.Printf("position %d: write image: %v", number, err)
-			continue
-		}
-
-		items[item.ID] = item
-		state.Done[id] = true
-		saveProgress(*resumePath, state)
-		log.Printf("position %d: %s", number, item.Text["en"].Title)
+		log.Printf("position %d: %s", number, page.Name)
 	}
+
+	// Write the catalog and review file BEFORE failing loudly on unknown
+	// slugs. Unknown slugs are an expected outcome of a first crawl over
+	// real data, not an edge case, so the run's completed work must be
+	// safely on disk before the process can exit non-zero.
+	if err := writeCatalog(*out, items); err != nil {
+		log.Fatalf("write catalog: %v", err)
+	}
+	writeReview(*reviewPath, state.Review)
+	log.Printf("wrote %d items to %s; %d pages need manual review", len(items), *out, len(state.Review))
 
 	if len(unknownSlugs) > 0 {
 		slugs := make([]string, 0, len(unknownSlugs))
@@ -143,10 +148,6 @@ func main() {
 		sort.Strings(slugs)
 		log.Fatalf("unknown tag slugs encountered: %s\nadd them to %s and re-run", strings.Join(slugs, ", "), *taxonomyPath)
 	}
-
-	writeCatalog(*out, items)
-	writeReview(*reviewPath, state.Review)
-	log.Printf("wrote %d items to %s; %d pages need manual review", len(items), *out, len(state.Review))
 }
 
 func buildItem(page positions.ParsedPage, tax *positions.Taxonomy) (catalog.Item, []string, error) {
@@ -160,6 +161,59 @@ func buildItem(page positions.ParsedPage, tax *positions.Taxonomy) (catalog.Item
 		Media: &catalog.MediaRef{Key: objectKey(page.Number, page.ImageURL)},
 	}
 	return item, unknown, nil
+}
+
+// processPage runs the per-page pipeline once a page's HTML has already been
+// fetched and parsed: it builds the catalog item and, only if every tag slug
+// on the page is known, fetches the image (via fetchImage, so this function
+// itself performs no network I/O) and commits the result. A page carrying
+// unknown tag slugs is rejected before fetchImage is ever called: its slugs
+// are returned so the caller can accumulate them into the run-wide set, and
+// the page is left neither added to items nor marked done, so a later run
+// re-fetches it once the taxonomy is extended.
+func processPage(number int, page positions.ParsedPage, tax *positions.Taxonomy, fetchImage func() ([]byte, int, error), imagesDir string, items map[string]catalog.Item, state progress, resumePath, catalogPath string) ([]string, error) {
+	item, unknown, err := buildItem(page, tax)
+	if err != nil {
+		return nil, fmt.Errorf("build item: %w", err)
+	}
+	if len(unknown) > 0 {
+		return unknown, nil
+	}
+
+	imageBytes, imageStatus, err := fetchImage()
+	if err != nil || imageStatus != http.StatusOK {
+		return nil, fmt.Errorf("image fetch failed (status %d): %w", imageStatus, err)
+	}
+
+	return nil, commitPage(number, item, imageBytes, imagesDir, items, state, resumePath, catalogPath)
+}
+
+// commitPage writes item's image to disk, adds item to items, marks the page
+// done, and persists both the progress file and the catalog immediately.
+// Persisting the catalog on every successful page — not just once at the end
+// of the whole crawl — is what makes the crawl safe to kill or crash at any
+// point: state.Done and the catalog file are updated together, so a resumed
+// run's "skip if already done" check can never silently outrun what the
+// catalog actually contains. The crawl is I/O-bound at 1 request/second, so
+// re-marshaling a few hundred KB of JSON on every page is immaterial next to
+// the network wait.
+func commitPage(number int, item catalog.Item, imageBytes []byte, imagesDir string, items map[string]catalog.Item, state progress, resumePath, catalogPath string) error {
+	target := filepath.Join(imagesDir, filepath.Base(item.Media.Key))
+	if err := os.WriteFile(target, imageBytes, 0o644); err != nil {
+		return fmt.Errorf("write image: %w", err)
+	}
+
+	items[item.ID] = item
+	state.Done[strconv.Itoa(number)] = true
+	saveProgress(resumePath, state)
+
+	if err := writeCatalog(catalogPath, items); err != nil {
+		// Non-fatal per page: one write hiccup must not abort a
+		// ~17-minute crawl, but it must never be silent either — this
+		// file is the run's entire deliverable.
+		log.Printf("position %d: write catalog: %v", number, err)
+	}
+	return nil
 }
 
 func objectKey(number int, imageURL string) string {
@@ -220,7 +274,7 @@ func loadCatalog(path string) catalog.Catalog {
 	return *loaded
 }
 
-func writeCatalog(path string, items map[string]catalog.Item) {
+func writeCatalog(path string, items map[string]catalog.Item) error {
 	list := make([]catalog.Item, 0, len(items))
 	for _, item := range items {
 		list = append(list, item)
@@ -233,11 +287,12 @@ func writeCatalog(path string, items map[string]catalog.Item) {
 	c := catalog.Catalog{Kind: "positions", Version: 1, Items: list}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
-		log.Fatalf("marshal catalog: %v", err)
+		return fmt.Errorf("marshal catalog: %w", err)
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		log.Fatalf("write catalog: %v", err)
+		return fmt.Errorf("write catalog: %w", err)
 	}
+	return nil
 }
 
 func writeReview(path string, entries []reviewEntry) {
