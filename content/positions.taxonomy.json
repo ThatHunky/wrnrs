@@ -18,17 +18,23 @@
     "lying-down":                {"facet": "type", "value": "lying-down"},
     "sitting":                   {"facet": "type", "value": "sitting"},
     "standing":                  {"facet": "type", "value": "standing"},
+    "kneeling":                  {"facet": "type", "value": "kneeling"},
+    "reverse":                   {"facet": "type", "value": "reverse"},
+    "right-angle":               {"facet": "type", "value": "right-angle"},
+    "sideways":                  {"facet": "type", "value": "sideways"},
 
     "clitoral-stimulation":      {"facet": "stimulation", "value": "clitoral"},
     "g-spot-stimulation":        {"facet": "stimulation", "value": "g-spot"},
     "a-spot-stimulation":        {"facet": "stimulation", "value": "a-spot"},
     "deep-spot-stimulation":     {"facet": "stimulation", "value": "deep-spot"},
     "hand-clitoris-stimulation": {"facet": "stimulation", "value": "hand-clitoris"},
+    "neutral-stimulation":       {"facet": "stimulation", "value": "neutral"},
 
     "deep-penetration":          {"facet": "penetration", "value": "deep"},
     "middle-penetration":        {"facet": "penetration", "value": "middle"},
     "shallow-penetration":       {"facet": "penetration", "value": "shallow"},
     "no-penetration":            {"facet": "penetration", "value": "none"},
+    "without-penetration":       {"facet": "penetration", "value": "none"},
 
     "bed":                       {"facet": "location", "value": "bed"},
     "sofa":                      {"facet": "location", "value": "sofa"},
@@ -46,11 +52,15 @@
     "anal-sex":                  {"facet": "act", "value": "anal"},
     "anal-play":                 {"facet": "act", "value": "anal-play"},
     "blowjob":                   {"facet": "act", "value": "blowjob"},
-    "cunnilingus":                {"facet": "act", "value": "cunnilingus"},
+    "cunnilingus":               {"facet": "act", "value": "cunnilingus"},
     "anilingus-rimming":         {"facet": "act", "value": "rimming"},
+    "oral-sex":                  {"facet": "act", "value": "oral"},
 
     "kissing":                   {"facet": "extra", "value": "kissing"},
     "breast-kissing":            {"facet": "extra", "value": "breast-kissing"},
-    "breasts-touching":          {"facet": "extra", "value": "breasts-touching"}
+    "breasts-touching":          {"facet": "extra", "value": "breasts-touching"},
+    "feet-kissing":              {"facet": "extra", "value": "feet-kissing"},
+    "holding-her-buttocks":      {"facet": "extra", "value": "holding-buttocks"},
+    "tight-huging":              {"facet": "extra", "value": "tight-hug"}
   }
 }
