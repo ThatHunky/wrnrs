@@ -99,6 +99,16 @@
     "gate.needs_18plus": "Confirm that you are 18+ first. It is in settings.",
     "gate.needs_mature": "This section needs your consent to 18+ content. Enable it in settings.",
     "gate.needs_pair": "Create a pair first — this section is for two.",
-    "gate.needs_premium": "This section is available with premium."
+    "gate.needs_premium": "This section is available with premium.",
+    "module.positions": "Positions",
+    "positions.hub": "Positions\n\nSpin the randomiser, browse the catalog, or set filters.",
+    "positions.attribution": "Illustrations: Sex Positions Club — https://sexpositions.club",
+    "positions.empty": "Nothing matches these filters. Try removing one.",
+    "positions.needs_pair_for_marks": "Marks are shared by the pair — create a pair to use them.",
+    "positions.dump_confirm": "Send all %d positions as separate messages? This will take about %d min.",
+    "positions.dump_started": "Sending. You can stop with the button below.",
+    "positions.dump_stopped": "Stopped. Sent %d.",
+    "positions.dump_done": "Done. Sent %d.",
+    "positions.filters": "Filters\n\nFound: %d"
   }
 }

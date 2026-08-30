@@ -99,6 +99,16 @@
     "gate.needs_18plus": "Спочатку підтверди, що тобі є 18+. Це в налаштуваннях.",
     "gate.needs_mature": "Цей розділ вимагає згоди на контент 18+. Увімкни її в налаштуваннях.",
     "gate.needs_pair": "Спочатку створи пару — цей розділ для двох.",
-    "gate.needs_premium": "Цей розділ доступний з преміумом."
+    "gate.needs_premium": "Цей розділ доступний з преміумом.",
+    "module.positions": "Пози",
+    "positions.hub": "Пози\n\nКрути навмання, гортай каталог або став фільтри.",
+    "positions.attribution": "Ілюстрації: Sex Positions Club — https://sexpositions.club",
+    "positions.empty": "За такими фільтрами нічого немає. Спробуй прибрати щось.",
+    "positions.needs_pair_for_marks": "Відмітки спільні для пари — створи пару, щоб ними користуватись.",
+    "positions.dump_confirm": "Надіслати всі %d поз окремими повідомленнями? Це займе близько %d хв.",
+    "positions.dump_started": "Надсилаю. Можеш зупинити кнопкою нижче.",
+    "positions.dump_stopped": "Зупинено. Надіслано %d.",
+    "positions.dump_done": "Готово. Надіслано %d.",
+    "positions.filters": "Фільтри\n\nЗнайдено: %d"
   }
 }
