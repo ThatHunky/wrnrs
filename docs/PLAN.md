@@ -249,7 +249,7 @@ Admin v1:
 
 ## Unfinished Planned Features
 
-- The positions randomiser (module 1) and the private wish-matching module (module 5, `internal/wishlist`) are the only superapp modules built so far on the shared `internal/catalog`/`internal/modules` framework. The remaining modules from `docs/superpowers/specs/2026-08-29-couples-superapp-positions-design.md` §3 — action dice, truth-or-dare, date ideas, question-of-the-day/streaks, mood check-ins, compliment cards, calendar/anniversaries, shared lists, and pair achievements — remain planned only; several need a not-yet-built `internal/scheduler`.
+- The positions randomiser (module 1), the truth-or-dare module (module 3, `internal/play`), and the private wish-matching module (module 5, `internal/wishlist`) are the superapp modules built so far on the shared `internal/catalog`/`internal/modules` framework. The remaining modules from `docs/superpowers/specs/2026-08-29-couples-superapp-positions-design.md` §3 — action dice, date ideas, question-of-the-day/streaks, mood check-ins, compliment cards, calendar/anniversaries, shared lists, and pair achievements — remain planned only; several need a not-yet-built `internal/scheduler`.
 - Wire Redis `render:file:{hash}` caching into the card game's own send paths — the positions module already uses this exact helper (`CacheFileID`/`FileID`) to cache Telegram file ids for its own photos.
 - Decide whether pair-invite Redis mirrors are still useful now that invites are durable SQLite rows.
 - Define MinIO lifecycle/retention policy for deleted or orphaned objects beyond app-driven deletes.

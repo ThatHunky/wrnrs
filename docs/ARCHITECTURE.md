@@ -10,6 +10,7 @@
 - `internal/modules`: module registry and access gate (`18+`, mature opt-in, active pair, premium) with callback-prefix dispatch.
 - `internal/positions`: position catalog module — source page parsing, tag taxonomy, browse state, pair-shared marks, throttled dump.
 - `internal/wishlist`: private wish matching — per-user answers, mutual-match computation, and the swipe/matches screens.
+- `internal/play`: truth-or-dare module — one couple on one phone, turn rotation, Redis-only session state.
 - `internal/game`: durable pair-game state transitions, invite acceptance, completion types, reveal readiness, no-repeat selection, level progression, and support prompt cadence.
 - `internal/i18n`: localized UI strings and brand text fallback.
 - `internal/storage`: SQLite migration and repository methods for profiles, pairs, sessions, answers, purchases, entitlements, uploads, admin audit, support timestamps, and custom questions.

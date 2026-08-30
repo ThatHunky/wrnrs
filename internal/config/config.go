@@ -29,6 +29,7 @@ type Config struct {
 	PositionsBucket       string
 	PositionsPrefix       string
 	WishesCatalogPath     string
+	PlayCatalogPath       string
 }
 
 type MinIOConfig struct {
@@ -98,6 +99,7 @@ func Load(getenv Getter) (Config, error) {
 		CardFontPath:          withDefault(getenv("CARD_FONT_PATH"), "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
 		PositionsCatalogPath:  withDefault(getenv("POSITIONS_CATALOG_PATH"), "content/positions.v1.json"),
 		WishesCatalogPath:     withDefault(getenv("WISHES_CATALOG_PATH"), "content/wishes.v1.json"),
+		PlayCatalogPath:       withDefault(getenv("PLAY_CATALOG_PATH"), "content/play.v1.json"),
 		PositionsBucket:       assets.PositionsBucket,
 		PositionsPrefix:       assets.PositionsPrefix,
 		MinIO:                 assets.MinIO,

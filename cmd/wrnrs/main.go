@@ -23,6 +23,7 @@ import (
 	"wrnrs/internal/i18n"
 	"wrnrs/internal/modules"
 	"wrnrs/internal/objectstore"
+	"wrnrs/internal/play"
 	"wrnrs/internal/positions"
 	"wrnrs/internal/render"
 	"wrnrs/internal/state"
@@ -236,6 +237,39 @@ func run(logger *slog.Logger) error {
 			Handler:        wishlistHandler,
 		}); err != nil {
 			return fmt.Errorf("register wishlist module: %w", err)
+		}
+	}
+
+	// The play catalog module follows the exact same degrade-not-die shape as
+	// the positions and wishes catalogs above: a missing or invalid
+	// content/play.v1.json must never stop the bot — it must only leave the
+	// module unregistered, so the bot's other live modules (the card game,
+	// positions, wishlist) keep working. Register() failing is still a
+	// programming error (a colliding callback prefix, an empty id) and fails
+	// startup loudly.
+	playCatalog, err := loadPlayCatalog(cfg.PlayCatalogPath)
+	if err != nil {
+		logger.Warn("play catalog unavailable; module disabled", "err", err)
+	} else if err := playCatalog.Validate([]string{"uk", "en"}); err != nil {
+		logger.Warn("play catalog invalid; module disabled", "err", err)
+	} else {
+		playHandler := play.NewHandler(play.HandlerOptions{
+			Service:    play.NewService(play.ServiceOptions{Catalog: playCatalog}),
+			Repository: repo,
+			Bot:        bot,
+			State:      redisStore,
+			I18n:       bundle,
+			Logger:     logger,
+		})
+		if err := application.Registry().Register(modules.Module{
+			ID:             "play",
+			TitleKey:       "module.play",
+			Icon:           "🃏",
+			CallbackPrefix: "play:",
+			Gate:           modules.Gate{Needs18Plus: true, NeedsMature: true},
+			Handler:        playHandler,
+		}); err != nil {
+			return fmt.Errorf("register play module: %w", err)
 		}
 	}
 
@@ -586,6 +620,19 @@ func positionTitleResolver(cat *catalog.Catalog) func(string) (string, bool) {
 // caller can log a warning and disable the module on a validation failure
 // instead of failing boot.
 func loadWishesCatalog(path string) (*catalog.Catalog, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return catalog.Load(file)
+}
+
+// loadPlayCatalog only opens and decodes the file; like loadWishesCatalog and
+// loadPositionsCatalog it deliberately does not call Validate itself, so its
+// caller can log a warning and disable the module on a validation failure
+// instead of failing boot.
+func loadPlayCatalog(path string) (*catalog.Catalog, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
