@@ -133,19 +133,38 @@ func TestNextBoundsTheRecentRing(t *testing.T) {
 	}
 }
 
-func TestConsecutiveDrawsDifferWithNothingElseChanging(t *testing.T) {
-	svc := play.NewService(play.ServiceOptions{Catalog: testCatalog()})
+// TestNextVariesTheShuffleBucketWhenSeenIsUnchanged pins Recent (and so
+// Seen) identical across both calls, with enough items that the ring never
+// clears, so the only thing that can differ between the two draws is Draw
+// folded into the shuffle bucket. testCatalog's 6 items are too few for
+// this: draw 1 always adds its card to Recent, so draw 2's Seen set is
+// necessarily different from draw 1's — Seen alone could then explain a
+// different result, which would make the assertion pass even with a
+// constant bucket. Holding Recent fixed by hand, over a catalog large
+// enough that Recent never approaches the full item count, closes that gap.
+func TestNextVariesTheShuffleBucketWhenSeenIsUnchanged(t *testing.T) {
+	items := []catalog.Item{}
+	for i := 1; i <= 40; i++ {
+		id := fmt.Sprintf("p%03d", i)
+		items = append(items, catalog.Item{
+			ID:     id,
+			Facets: map[string][]string{"kind": {"dare"}, "intensity": {"gentle"}},
+			Text:   map[string]catalog.ItemText{"uk": {Title: id, Body: "текст"}},
+		})
+	}
+	svc := play.NewService(play.ServiceOptions{Catalog: &catalog.Catalog{Kind: "play", Version: 1, Items: items}})
 
-	first, state, err := svc.Next(11, play.GameState{})
+	recent := []string{"p001", "p002", "p003", "p004", "p005", "p006", "p007", "p008", "p009", "p010"}
+	first, _, err := svc.Next(11, play.GameState{Draw: 0, Recent: append([]string(nil), recent...)})
 	if err != nil {
 		t.Fatalf("first draw: %v", err)
 	}
-	second, _, err := svc.Next(11, state)
+	second, _, err := svc.Next(11, play.GameState{Draw: 1, Recent: append([]string(nil), recent...)})
 	if err != nil {
 		t.Fatalf("second draw: %v", err)
 	}
 	if first.ID == second.ID {
-		t.Fatalf("two consecutive draws both returned %s; the draw counter is not varying the shuffle", first.ID)
+		t.Fatalf("two draws with identical Recent (so identical Seen) but Draw 0 vs 1 both returned %s; the draw counter is not varying the shuffle bucket", first.ID)
 	}
 }
 
