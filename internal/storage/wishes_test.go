@@ -132,24 +132,57 @@ func TestPairWishMatchesSeparatesItemKinds(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	for _, u := range []int64{1001, 1002} {
-		if err := repo.SetWishAnswer(ctx, u, storage.WishKindWish, "001", storage.AnswerWant, now); err != nil {
-			t.Fatalf("SetWishAnswer wish: %v", err)
-		}
-		if err := repo.SetWishAnswer(ctx, u, storage.WishKindPosition, "001", storage.AnswerNo, now); err != nil {
-			t.Fatalf("SetWishAnswer position: %v", err)
-		}
+	// Both kinds share the same item id "001" but get different, both
+	// non-"no" answers. If the join ever lost its item_kind condition, these
+	// rows would cross-match: wish's "want" would pair with position's
+	// "curious" (and vice versa), producing extra rows and a wrong Strong
+	// value instead of silently disappearing. A fixture where the second
+	// kind is all "no" (as before) can't catch that: "no" is filtered out by
+	// the match predicate regardless of whether the kind join exists, so
+	// removing the kind join left that version of this test passing.
+	if err := repo.SetWishAnswer(ctx, 1001, storage.WishKindWish, "001", storage.AnswerWant, now); err != nil {
+		t.Fatalf("SetWishAnswer wish A: %v", err)
+	}
+	if err := repo.SetWishAnswer(ctx, 1002, storage.WishKindWish, "001", storage.AnswerWant, now); err != nil {
+		t.Fatalf("SetWishAnswer wish B: %v", err)
+	}
+	if err := repo.SetWishAnswer(ctx, 1001, storage.WishKindPosition, "001", storage.AnswerWant, now); err != nil {
+		t.Fatalf("SetWishAnswer position A: %v", err)
+	}
+	if err := repo.SetWishAnswer(ctx, 1002, storage.WishKindPosition, "001", storage.AnswerCurious, now); err != nil {
+		t.Fatalf("SetWishAnswer position B: %v", err)
 	}
 
 	matches, err := repo.PairWishMatches(ctx, pairID)
 	if err != nil {
 		t.Fatalf("PairWishMatches: %v", err)
 	}
-	if len(matches) != 1 {
-		t.Fatalf("matches = %v, want exactly one — the same id in two kinds must not be conflated", matches)
+	if len(matches) != 2 {
+		t.Fatalf("matches = %+v, want exactly 2 (one wish, one position) — a missing item_kind join would cross-match the two kinds sharing id \"001\" into extra rows", matches)
 	}
-	if matches[0].ItemKind != storage.WishKindWish {
-		t.Fatalf("match kind = %q, want %q", matches[0].ItemKind, storage.WishKindWish)
+
+	want := map[storage.WishItemKind]storage.WishMatch{
+		storage.WishKindWish:     {ItemKind: storage.WishKindWish, ItemID: "001", Strong: true},
+		storage.WishKindPosition: {ItemKind: storage.WishKindPosition, ItemID: "001", Strong: false},
+	}
+	seen := map[storage.WishItemKind]bool{}
+	for _, m := range matches {
+		if seen[m.ItemKind] {
+			t.Fatalf("matches = %+v, want at most one match per kind — a duplicate %q entry indicates the two kinds were cross-joined", matches, m.ItemKind)
+		}
+		seen[m.ItemKind] = true
+		wantMatch, ok := want[m.ItemKind]
+		if !ok {
+			t.Fatalf("unexpected item kind %q in matches %+v", m.ItemKind, matches)
+		}
+		if m != wantMatch {
+			t.Fatalf("match for kind %q = %+v, want %+v", m.ItemKind, m, wantMatch)
+		}
+	}
+	for kind := range want {
+		if !seen[kind] {
+			t.Fatalf("matches = %+v, missing expected kind %q", matches, kind)
+		}
 	}
 }
 
