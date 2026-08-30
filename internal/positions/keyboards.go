@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"wrnrs/internal/catalog"
+	"wrnrs/internal/i18n"
 	"wrnrs/internal/telegram"
 )
 
@@ -35,17 +36,69 @@ func itemTitleAndBody(language string, item catalog.Item) (string, string) {
 	return "", ""
 }
 
-// facetSummary renders the curated facet values for one item, joined with
-// "·". A facet with several values (e.g. multiple locations) joins them with
-// "/". Facets absent from the item are skipped rather than shown empty.
-func facetSummary(item catalog.Item) string {
+// facetBundle holds the i18n bundle used to localize facet names and values
+// in facetSummary and FiltersKeyboard. BrowseCaption and BrowseKeyboard have
+// signatures fixed by the module framework and carry no bundle parameter of
+// their own, so NewHandler installs the process's one bundle here once, at
+// construction, instead of threading it through every call. Nil — the zero
+// value, and what it stays at in every test in this package that never
+// constructs a Handler — degrades every lookup to the raw facet/value slug,
+// exactly the same fallback used when the bundle IS set but lacks the
+// specific key.
+var facetBundle *i18n.Bundle
+
+// facetNameLabel resolves a facet's own display name (e.g. "level" ->
+// "Рівень" / "Level") from the "positions.facet.<facet>" i18n key. It falls
+// back to the raw facet slug — never to the raw i18n key, which is what
+// i18n.Bundle.Text returns on a miss — whenever facetBundle is nil or the
+// key is missing, so a taxonomy addition without a matching translation
+// still renders something a user can read instead of "positions.facet.x".
+func facetNameLabel(language, facet string) string {
+	if facetBundle == nil {
+		return facet
+	}
+	key := "positions.facet." + facet
+	if text := facetBundle.Text(language, key); text != key {
+		return text
+	}
+	return facet
+}
+
+// facetValueLabel resolves one facet value's display label (e.g.
+// ("level", "hard") -> "складна" / "Hard") from the
+// "positions.value.<facet>.<value>" i18n key, with the same nil-bundle /
+// missing-key fallback to the raw value as facetNameLabel.
+func facetValueLabel(language, facet, value string) string {
+	if facetBundle == nil {
+		return value
+	}
+	key := fmt.Sprintf("positions.value.%s.%s", facet, value)
+	if text := facetBundle.Text(language, key); text != key {
+		return text
+	}
+	return value
+}
+
+// facetSummary renders the curated facet values for one item, one
+// "<facet name>: <value>[/<value>]" segment per facet joined with "·". A
+// bare join of just the values (the pre-i18n behaviour) reads oddly in
+// Ukrainian: level values are adjectives ("складна") and location values
+// are nouns ("стілець"), so two bare values sitting side by side don't read
+// as a phrase. Prefixing each with its own facet name keeps every segment
+// self-contained in both languages. Facets absent from the item are
+// skipped rather than shown empty.
+func facetSummary(language string, item catalog.Item) string {
 	var parts []string
 	for _, facet := range captionFacets {
 		values := item.Facets[facet]
 		if len(values) == 0 {
 			continue
 		}
-		parts = append(parts, strings.Join(values, "/"))
+		labels := make([]string, len(values))
+		for i, value := range values {
+			labels[i] = facetValueLabel(language, facet, value)
+		}
+		parts = append(parts, facetNameLabel(language, facet)+": "+strings.Join(labels, "/"))
 	}
 	return strings.Join(parts, " · ")
 }
@@ -68,7 +121,7 @@ func BrowseCaption(language string, item catalog.Item, index, total int, tried, 
 
 	var lines []string
 	lines = append(lines, strings.TrimSpace(title+markers))
-	if facets := facetSummary(item); facets != "" {
+	if facets := facetSummary(language, item); facets != "" {
 		lines = append(lines, facets)
 	}
 	if strings.TrimSpace(body) != "" {
@@ -161,14 +214,27 @@ type FacetOption struct {
 // currently-included values with a check, followed by an escape row back to
 // the browse view (results already reflect the filter) and the main menu.
 // The result count is rendered by the caller into the screen text, not here.
+//
+// Each facet's values are preceded by their own header row carrying the
+// localized facet name (e.g. "Рівень" / "Level") — the value buttons
+// already fall into separate rows per facet (a new facet always starts a
+// fresh row below), but without a label there is nothing on screen telling
+// the viewer which row is which facet. The header button's callback data is
+// "pos:filters", the same screen a tap already lands on, so an accidental
+// tap on a header is a harmless no-op refresh rather than an unhandled
+// callback. Button text is display-only and localized; callback data always
+// carries the raw facet/value slugs so filter state round-trips unchanged.
 func FiltersKeyboard(language string, filter catalog.Filter, facets []FacetOption) telegram.InlineKeyboardMarkup {
 	var rows [][]telegram.InlineKeyboardButton
 	for _, option := range facets {
+		rows = append(rows, []telegram.InlineKeyboardButton{
+			{Text: facetNameLabel(language, option.Facet), CallbackData: "pos:filters"},
+		})
 		var row []telegram.InlineKeyboardButton
 		for _, value := range option.Values {
-			label := value
+			label := facetValueLabel(language, option.Facet, value)
 			if includesValue(filter.Include[option.Facet], value) {
-				label = "✓ " + value
+				label = "✓ " + label
 			}
 			row = append(row, telegram.InlineKeyboardButton{
 				Text:         label,

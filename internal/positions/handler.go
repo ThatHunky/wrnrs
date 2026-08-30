@@ -167,6 +167,12 @@ func NewHandler(options HandlerOptions) *Handler {
 	if now == nil {
 		now = time.Now
 	}
+	// facetBundle is process-wide: BrowseCaption and BrowseKeyboard have
+	// signatures fixed by the module framework and take no bundle
+	// parameter, so this is the only place that can hand facetSummary and
+	// FiltersKeyboard a way to localize facet names and values. Safe to set
+	// unconditionally — options.I18n is required above.
+	facetBundle = options.I18n
 	return &Handler{
 		service:      options.Service,
 		catalog:      options.Catalog,
