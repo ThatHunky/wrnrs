@@ -85,6 +85,26 @@ func TestBrowseKeyboardExposesEveryControl(t *testing.T) {
 	}
 }
 
+// TestBrowseKeyboardExposesHideControl pins the fix for the review finding
+// that MarkHidden and VisibleWithMarks's hide-filtering were unreachable
+// from the UI: no keyboard ever emitted a pos:mark:hidden: callback. This
+// asserts the browse keyboard now wires one in, using the button's own
+// existing parameters rather than a signature change.
+func TestBrowseKeyboardExposesHideControl(t *testing.T) {
+	markup := positions.BrowseKeyboard("uk", "519", 4, false, false, false)
+
+	var data []string
+	for _, row := range markup.InlineKeyboard {
+		for _, button := range row {
+			data = append(data, button.CallbackData)
+		}
+	}
+	joined := strings.Join(data, " ")
+	if !strings.Contains(joined, "pos:mark:hidden:519") {
+		t.Fatalf("keyboard callbacks %q are missing pos:mark:hidden:519", joined)
+	}
+}
+
 func TestBrowseKeyboardDisablesSharedMarksWithoutAPair(t *testing.T) {
 	withoutPair := positions.BrowseKeyboard("uk", "519", 0, false, false, true)
 
@@ -167,7 +187,7 @@ func TestFiltersKeyboardTogglesMarkSelectedValues(t *testing.T) {
 	}
 	filter := catalog.Filter{Include: map[string][]string{"level": {"medium"}}}
 
-	markup := positions.FiltersKeyboard("uk", filter, facets, 42)
+	markup := positions.FiltersKeyboard("uk", filter, facets)
 
 	var selected, unselected string
 	for _, row := range markup.InlineKeyboard {
@@ -192,7 +212,7 @@ func TestFiltersKeyboardTogglesMarkSelectedValues(t *testing.T) {
 }
 
 func TestFiltersKeyboardCarriesBrowseAndMenuEscape(t *testing.T) {
-	markup := positions.FiltersKeyboard("uk", catalog.Filter{}, nil, 0)
+	markup := positions.FiltersKeyboard("uk", catalog.Filter{}, nil)
 	var data []string
 	for _, row := range markup.InlineKeyboard {
 		for _, button := range row {

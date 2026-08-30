@@ -109,6 +109,7 @@
     "positions.dump_started": "Надсилаю. Можеш зупинити кнопкою нижче.",
     "positions.dump_stopped": "Зупинено. Надіслано %d.",
     "positions.dump_done": "Готово. Надіслано %d.",
+    "positions.dump_busy": "Зараз забагато надсилань одночасно. Спробуй ще раз за хвилину.",
     "positions.filters": "Фільтри\n\nЗнайдено: %d"
   }
 }

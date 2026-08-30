@@ -14,6 +14,13 @@ type BrowseState struct {
 	Filter catalog.Filter `json:"f"`
 	Index  int            `json:"i"`
 	Cycle  int            `json:"c"`
+	// Draw counts every randomiser draw the caller has made, independent of
+	// Cycle (which only advances once the whole selection has been fully
+	// tried). It is folded into the shuffle bucket so two consecutive draws
+	// with nothing else different — the common case for a solo user, who
+	// has no marks to change between taps — do not replay the exact same
+	// deterministic shuffle.
+	Draw int `json:"d"`
 }
 
 // EncodeState serializes a BrowseState for storage outside the process
@@ -103,7 +110,18 @@ func (s *Service) At(items []catalog.Item, index int) (catalog.Item, int, bool) 
 // be persisted by the caller and passed back in on the next call — that is
 // what makes a subsequent draw against an exhausted set differ from the one
 // that just exhausted it, instead of repeating forever.
-func (s *Service) Random(seedID int64, items []catalog.Item, marks map[string]storage.PositionMark, cycle int) (catalog.Item, int, error) {
+//
+// draw must also be persisted by the caller and passed back incremented on
+// every call, exhausted or not. cycle alone is not enough: catalog.SelectNext
+// only changes its shuffle when the untried pool is empty and it has to
+// reshuffle the whole set, so as long as at least one untried item remains,
+// calling Random again with the same (seedID, items, marks, cycle) — the
+// normal case for a solo user, who has no marks to change between two
+// consecutive taps — is pure and returns the exact same item every time.
+// Folding draw into the shuffle bucket makes every single call independent
+// regardless of whether the pool was exhausted, while Seen still keeps
+// untried items preferred over tried ones.
+func (s *Service) Random(seedID int64, items []catalog.Item, marks map[string]storage.PositionMark, cycle, draw int) (catalog.Item, int, error) {
 	seen := make(map[string]bool, len(marks))
 	for id, mark := range marks {
 		if mark.TriedAt.Valid {
@@ -112,7 +130,7 @@ func (s *Service) Random(seedID int64, items []catalog.Item, marks map[string]st
 	}
 	item, nextCycle, _, err := catalog.SelectNext(catalog.SelectionInput{
 		SeedID: seedID,
-		Bucket: "positions",
+		Bucket: fmt.Sprintf("positions:%d", draw),
 		Cycle:  cycle,
 		Items:  items,
 		Seen:   seen,

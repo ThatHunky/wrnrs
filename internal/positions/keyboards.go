@@ -80,10 +80,15 @@ func BrowseCaption(language string, item catalog.Item, index, total int, tried, 
 }
 
 // BrowseKeyboard builds the control rows under a browse card: navigation,
-// shared marks, and an escape to filters or the main menu. soloMode is true
-// when the viewer has no active pair — the mark buttons stay visible (a
-// user with no marks yet should not wonder where they went) but carry a
-// lock marker, since marks are pair-shared and cannot be set solo.
+// shared marks (tried, favorited, hidden), and an escape to filters or the
+// main menu. soloMode is true when the viewer has no active pair — the mark
+// buttons stay visible (a user with no marks yet should not wonder where
+// they went) but carry a lock marker, since marks are pair-shared and
+// cannot be set solo. The hide button buries the item for the pair — once
+// hidden, VisibleWithMarks drops it from every screen (browse, random and
+// the bulk send alike) with no in-UI way back; that one-way "I never want
+// to see this again" semantics matches how the service layer already
+// documents the feature, rather than a togglable show/hide.
 func BrowseKeyboard(language, itemID string, index int, tried, favorited, soloMode bool) telegram.InlineKeyboardMarkup {
 	triedText := "✅"
 	if tried {
@@ -93,9 +98,11 @@ func BrowseKeyboard(language, itemID string, index int, tried, favorited, soloMo
 	if favorited {
 		favoritedText = "⭐✓"
 	}
+	hideText := "🙈"
 	if soloMode {
 		triedText += " 🔒"
 		favoritedText += " 🔒"
+		hideText += " 🔒"
 	}
 
 	filtersText := "☰"
@@ -117,6 +124,7 @@ func BrowseKeyboard(language, itemID string, index int, tried, favorited, soloMo
 		{
 			{Text: triedText, CallbackData: "pos:mark:tried:" + itemID},
 			{Text: favoritedText, CallbackData: "pos:mark:favorited:" + itemID},
+			{Text: hideText, CallbackData: "pos:mark:hidden:" + itemID},
 		},
 		{
 			{Text: filtersText, CallbackData: "pos:filters"},
@@ -152,12 +160,8 @@ type FacetOption struct {
 // FiltersKeyboard renders one toggle button per (facet, value) pair, marking
 // currently-included values with a check, followed by an escape row back to
 // the browse view (results already reflect the filter) and the main menu.
-// total is not rendered here — the caller folds it into the screen text —
-// but is accepted so future revisions can show per-value counts without
-// another signature change.
-func FiltersKeyboard(language string, filter catalog.Filter, facets []FacetOption, total int) telegram.InlineKeyboardMarkup {
-	_ = total
-
+// The result count is rendered by the caller into the screen text, not here.
+func FiltersKeyboard(language string, filter catalog.Filter, facets []FacetOption) telegram.InlineKeyboardMarkup {
 	var rows [][]telegram.InlineKeyboardButton
 	for _, option := range facets {
 		var row []telegram.InlineKeyboardButton

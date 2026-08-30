@@ -2,6 +2,7 @@ package positions_test
 
 import (
 	"database/sql"
+	"strconv"
 	"testing"
 	"time"
 
@@ -152,7 +153,7 @@ func TestRandomPrefersUntriedPositions(t *testing.T) {
 		"3": {PositionID: "3", TriedAt: sql.NullTime{Time: time.Now(), Valid: true}},
 	}
 
-	got, _, err := svc.Random(4242, items, tried, 0)
+	got, _, err := svc.Random(4242, items, tried, 0, 0)
 	if err != nil {
 		t.Fatalf("Random: %v", err)
 	}
@@ -170,7 +171,7 @@ func TestRandomStartsANewCycleWhenEverythingIsTried(t *testing.T) {
 		all[item.ID] = storage.PositionMark{PositionID: item.ID, TriedAt: sql.NullTime{Time: time.Now(), Valid: true}}
 	}
 
-	got, cycle, err := svc.Random(4242, items, all, 0)
+	got, cycle, err := svc.Random(4242, items, all, 0, 0)
 	if err != nil {
 		t.Fatalf("Random: %v", err)
 	}
@@ -195,7 +196,7 @@ func TestRandomCycleChangesTheDrawOnTheNextCall(t *testing.T) {
 		all[item.ID] = storage.PositionMark{PositionID: item.ID, TriedAt: sql.NullTime{Time: time.Now(), Valid: true}}
 	}
 
-	firstItem, firstCycle, err := svc.Random(4242, items, all, 0)
+	firstItem, firstCycle, err := svc.Random(4242, items, all, 0, 0)
 	if err != nil {
 		t.Fatalf("Random (first): %v", err)
 	}
@@ -205,7 +206,7 @@ func TestRandomCycleChangesTheDrawOnTheNextCall(t *testing.T) {
 
 	// Simulate the caller persisting and replaying the returned cycle for the
 	// next draw on the same still-fully-tried set.
-	secondItem, secondCycle, err := svc.Random(4242, items, all, firstCycle)
+	secondItem, secondCycle, err := svc.Random(4242, items, all, firstCycle, 1)
 	if err != nil {
 		t.Fatalf("Random (second): %v", err)
 	}
@@ -214,6 +215,72 @@ func TestRandomCycleChangesTheDrawOnTheNextCall(t *testing.T) {
 	}
 	_ = firstItem
 	_ = secondItem
+}
+
+// manyItemsServiceCatalog builds a catalog with n uniquely-identified items
+// and no facets/tags — enough breadth that a shuffle collision across
+// several consecutive draws is astronomically unlikely to happen by chance,
+// keeping the flakiness of TestRandomConsecutiveDrawsVaryWithoutStateChange
+// effectively zero.
+func manyItemsServiceCatalog(n int) *catalog.Catalog {
+	items := make([]catalog.Item, 0, n)
+	for i := 0; i < n; i++ {
+		id := strconv.Itoa(i + 1)
+		items = append(items, catalog.Item{ID: id, Text: map[string]catalog.ItemText{"uk": {Title: id}}})
+	}
+	return &catalog.Catalog{Kind: "positions", Version: 1, Items: items}
+}
+
+// TestRandomConsecutiveDrawsVaryWithoutStateChange pins the fix for the
+// review finding that Random was pure in (seed, bucket, cycle, items, seen):
+// two consecutive draws with nothing else different — no new marks, no
+// filter change — returned the exact same item forever, since cycle only
+// advances once the whole set has been exhausted. This is exactly the
+// scenario a solo user hits on every single pos:random tap, because marks
+// require a pair while the module itself does not.
+func TestRandomConsecutiveDrawsVaryWithoutStateChange(t *testing.T) {
+	svc := positions.NewService(positions.ServiceOptions{Catalog: manyItemsServiceCatalog(40)})
+	items := svc.VisibleWithMarks(catalog.Filter{}, nil)
+
+	seen := map[string]bool{}
+	var picks []string
+	for draw := 0; draw < 6; draw++ {
+		item, _, err := svc.Random(9001, items, nil, 0, draw)
+		if err != nil {
+			t.Fatalf("Random draw %d: %v", draw, err)
+		}
+		picks = append(picks, item.ID)
+		seen[item.ID] = true
+	}
+	if len(seen) < 2 {
+		t.Fatalf("6 consecutive Random draws with unchanged state all returned %v; the randomiser must vary between presses", picks)
+	}
+}
+
+// TestRandomConsecutiveDrawsStillPreferUntried complements the test above:
+// varying the draw counter must not come at the cost of the untried-first
+// property that is the whole point of the feature — with several items
+// already tried, every one of several consecutive draws must still land on
+// one of the two untried items, never on a tried one.
+func TestRandomConsecutiveDrawsStillPreferUntried(t *testing.T) {
+	svc := positions.NewService(positions.ServiceOptions{Catalog: manyItemsServiceCatalog(10)})
+	items := svc.VisibleWithMarks(catalog.Filter{}, nil)
+
+	tried := map[string]storage.PositionMark{}
+	for _, item := range items[:8] {
+		tried[item.ID] = storage.PositionMark{PositionID: item.ID, TriedAt: sql.NullTime{Time: time.Now(), Valid: true}}
+	}
+	untried := map[string]bool{items[8].ID: true, items[9].ID: true}
+
+	for draw := 0; draw < 5; draw++ {
+		got, _, err := svc.Random(9002, items, tried, 0, draw)
+		if err != nil {
+			t.Fatalf("Random draw %d: %v", draw, err)
+		}
+		if !untried[got.ID] {
+			t.Fatalf("Random draw %d = %s, want one of the 2 untried items %v", draw, got.ID, untried)
+		}
+	}
 }
 
 func itemIDs(items []catalog.Item) []string {

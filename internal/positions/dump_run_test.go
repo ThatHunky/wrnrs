@@ -156,9 +156,72 @@ func TestStartDumpTracksARunOnSuccess(t *testing.T) {
 	// Clean up the goroutine startDump launched so it does not outlive the
 	// test.
 	h.mu.Lock()
-	cancel, ok := h.runs[userID]
+	run, ok := h.runs[userID]
 	h.mu.Unlock()
 	if ok {
-		cancel()
+		run.cancel()
+	}
+}
+
+// TestRestartingADumpKeepsTheNewRunsCancelRegistered pins the fix for the
+// review finding: a restarted dump must not let the OLD goroutine's
+// deferred cleanup delete the NEW run's entry out from under it. Before the
+// fix, h.runs held a bare context.CancelFunc with no identity, so old and
+// new entries were indistinguishable — the first run's cleanup (which fired
+// only after it fully drained and sent its "stopped" message, well after the
+// second run had already been installed) deleted whatever was in the map,
+// including a completely unrelated second run. That made pos:dump:stop a
+// permanent no-op for that user, and a further "send all" tap would spawn
+// yet another live goroutine against the same chat.
+func TestRestartingADumpKeepsTheNewRunsCancelRegistered(t *testing.T) {
+	h := newRunTestHandler(t, nil)
+	const userID = int64(9191)
+	cb := &telegram.CallbackQuery{From: telegram.User{ID: userID}, Data: "pos:dump:go"}
+
+	if err := h.startDump(context.Background(), cb, userID, userID, "uk"); err != nil {
+		t.Fatalf("startDump (first): %v", err)
+	}
+	h.mu.Lock()
+	firstRun := h.runs[userID]
+	h.mu.Unlock()
+	if firstRun == nil {
+		t.Fatal("first startDump did not install a run")
+	}
+
+	if err := h.startDump(context.Background(), cb, userID, userID, "uk"); err != nil {
+		t.Fatalf("startDump (restart): %v", err)
+	}
+	h.mu.Lock()
+	secondRun := h.runs[userID]
+	h.mu.Unlock()
+	if secondRun == nil {
+		t.Fatal("restart did not install a second run")
+	}
+	if secondRun == firstRun {
+		t.Fatal("restart reused the first run's identity; the second startDump must install a distinct run")
+	}
+
+	// Give the first (now-canceled) goroutine every chance to actually run
+	// its deferred cleanup: its context was canceled by the restart, so
+	// Dump returns almost immediately with context.Canceled. If the bug is
+	// present, this is exactly the window in which the first goroutine's
+	// cleanup clobbers the second run's entry.
+	deadline := time.After(time.Second)
+	for {
+		h.mu.Lock()
+		current := h.runs[userID]
+		h.mu.Unlock()
+		if current == nil {
+			t.Fatal("h.runs lost the entry entirely; want the second run's cancel still registered")
+		}
+		if current != secondRun {
+			t.Fatalf("h.runs[%d] changed identity to something other than the second run; the first (stale) goroutine's cleanup clobbered it", userID)
+		}
+		select {
+		case <-deadline:
+			return
+		default:
+			time.Sleep(5 * time.Millisecond)
+		}
 	}
 }

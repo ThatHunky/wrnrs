@@ -66,6 +66,12 @@ const (
 	browseStateTTL    = 24 * time.Hour
 	fileIDCacheTTL    = 180 * 24 * time.Hour
 	defaultDumpPeriod = 3 * time.Second
+	// maxConcurrentDumps bounds how many bulk sends this process runs at
+	// once, across every user. Each running dump sends roughly one message
+	// per DumpInterval; without a cap, enough simultaneous "send all" taps
+	// could still exceed Telegram's global send budget even though each
+	// individual dump is correctly paced against its own chat.
+	maxConcurrentDumps = 5
 )
 
 // curatedFilterFacets are the facets exposed on the filters screen. The
@@ -110,7 +116,25 @@ type Handler struct {
 	filterFacets []FacetOption
 
 	mu   sync.Mutex
-	runs map[int64]context.CancelFunc
+	runs map[int64]*dumpRun
+
+	// dumpSlots bounds maxConcurrentDumps running bulk sends at a time,
+	// across every user this Handler serves. Acquired (buffered send) in
+	// startDump before a run is committed to starting, released (buffered
+	// receive) exactly once by whichever goroutine acquired it — either
+	// runDump's cleanup on the success path, or startDump itself if the run
+	// never actually launched.
+	dumpSlots chan struct{}
+}
+
+// dumpRun identifies one in-flight bulk send. It exists (rather than
+// h.runs holding a bare context.CancelFunc) so a goroutine's deferred
+// cleanup can tell whether the map entry it is about to delete still
+// belongs to it: two context.CancelFunc values are not comparable with ==,
+// so without this wrapper a restarted dump's cleanup had no way to avoid
+// deleting whatever a completely unrelated, later run had installed.
+type dumpRun struct {
+	cancel context.CancelFunc
 }
 
 // NewHandler builds a Handler. It panics only on a genuinely unusable
@@ -140,7 +164,8 @@ func NewHandler(options HandlerOptions) *Handler {
 		dumpInterval: interval,
 		now:          now,
 		filterFacets: collectFacetOptions(options.Catalog, curatedFilterFacets),
-		runs:         map[int64]context.CancelFunc{},
+		runs:         map[int64]*dumpRun{},
+		dumpSlots:    make(chan struct{}, maxConcurrentDumps),
 	}
 }
 
@@ -198,6 +223,24 @@ func (h *Handler) HandleCallback(ctx context.Context, cb *telegram.CallbackQuery
 	if cb == nil {
 		return nil
 	}
+	if cb.Message != nil && isGroupChat(cb.Message.Chat.Type) {
+		// Positions content — up to and including a full catalog dump — is
+		// inherently a direct-message feature: the maturity gate resolves
+		// the TAPPING user, not the chat, so a shared chat with one 18+
+		// opted-in member would otherwise let that member blast explicit
+		// content to everyone in it. Refuse outright, for every screen and
+		// the dump path alike, rather than trying to redirect the reply
+		// into the user's own DM — that would mean editing/deleting a
+		// message that lives in a different chat than the one it was sent
+		// from, which the rest of this file (presentText, presentCard,
+		// deleteStale) is not built to do safely, and proactively messaging
+		// a user who has never started a chat with the bot fails anyway. A
+		// denylist on the known shared-chat types, rather than an allowlist
+		// requiring exactly "private", keeps this defensive without
+		// tripping on any code path — including this package's own tests —
+		// that never populates Chat.Type at all.
+		return nil
+	}
 	userID := cb.From.ID
 	chatID := userID
 	if cb.Message != nil {
@@ -228,6 +271,17 @@ func (h *Handler) HandleCallback(ctx context.Context, cb *telegram.CallbackQuery
 		return h.stopDump(ctx, cb, chatID, userID, language)
 	default:
 		return nil
+	}
+}
+
+// isGroupChat reports whether chatType names a shared chat — every type
+// Telegram uses for something that is not a one-to-one chat with the bot.
+func isGroupChat(chatType string) bool {
+	switch chatType {
+	case "group", "supergroup", "channel":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -352,7 +406,7 @@ func (h *Handler) showRandom(ctx context.Context, cb *telegram.CallbackQuery, ch
 		return h.presentText(ctx, cb, chatID, h.i18n.Text(language, "positions.empty"), HubKeyboard(language))
 	}
 
-	item, nextCycle, err := h.service.Random(seedFor(pair, userID), items, marks, state.Cycle)
+	item, nextCycle, err := h.service.Random(seedFor(pair, userID), items, marks, state.Cycle, state.Draw)
 	if err != nil {
 		return h.presentText(ctx, cb, chatID, h.i18n.Text(language, "positions.empty"), HubKeyboard(language))
 	}
@@ -360,6 +414,12 @@ func (h *Handler) showRandom(ctx context.Context, cb *telegram.CallbackQuery, ch
 	index := indexOf(items, item.ID)
 	state.Index = index
 	state.Cycle = nextCycle
+	// Draw advances on every single press, independent of Cycle (which only
+	// bumps once the whole selection has been fully tried). Without this, two
+	// consecutive pos:random taps with nothing else different — the normal
+	// case for a solo user, who has no marks to change — replayed the exact
+	// same deterministic shuffle and returned the exact same item forever.
+	state.Draw++
 	h.saveState(ctx, userID, state)
 
 	return h.showItem(ctx, cb, chatID, language, item, index, len(items), marks, pair == nil)
@@ -372,6 +432,18 @@ func indexOf(items []catalog.Item, id string) int {
 		}
 	}
 	return 0
+}
+
+// indexOfOK is indexOf's counterpart for callers that must tell "found at 0"
+// apart from "not found at all" — indexOf alone cannot, since it returns 0
+// for both.
+func indexOfOK(items []catalog.Item, id string) (int, bool) {
+	for i, item := range items {
+		if item.ID == id {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 // showItem renders one card: caption, keyboard and photo (or text
@@ -420,15 +492,19 @@ func (h *Handler) handleMark(ctx context.Context, cb *telegram.CallbackQuery, ch
 	}
 	state := h.loadState(ctx, userID)
 	items := h.visibleItems(state, marks)
-	index := indexOf(items, item.ID)
-	return h.showItem(ctx, cb, chatID, language, item, index, maxInt(len(items), 1), marks, false)
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
+	index, found := indexOfOK(items, item.ID)
+	if !found {
+		// The toggle just buried the item the user was looking at (kind ==
+		// hidden): it no longer belongs to the visible selection, so there
+		// is nothing sane to show at its old slot. Land wherever the browse
+		// cursor now points instead — the same place paging there directly
+		// would — rather than rendering the just-hidden item with a bogus
+		// "0/N" counter.
+		return h.showBrowse(ctx, cb, chatID, userID, language, state.Index)
 	}
-	return b
+	state.Index = index
+	h.saveState(ctx, userID, state)
+	return h.showItem(ctx, cb, chatID, language, item, index, len(items), marks, false)
 }
 
 func parseMarkKind(raw string) (storage.PositionMarkKind, bool) {
@@ -453,7 +529,7 @@ func (h *Handler) showFilters(ctx context.Context, cb *telegram.CallbackQuery, c
 	total := len(h.visibleItems(state, marks))
 	text := h.i18n.Text(language, "positions.filters")
 	text = sprintfSafe(text, total)
-	return h.presentText(ctx, cb, chatID, text, FiltersKeyboard(language, state.Filter, h.filterFacets, total))
+	return h.presentText(ctx, cb, chatID, text, FiltersKeyboard(language, state.Filter, h.filterFacets))
 }
 
 func (h *Handler) handleFilterToggle(ctx context.Context, cb *telegram.CallbackQuery, chatID, userID int64, language, rest string) error {
@@ -494,43 +570,70 @@ func (h *Handler) startDump(ctx context.Context, cb *telegram.CallbackQuery, cha
 		return h.presentText(ctx, cb, chatID, h.i18n.Text(language, "positions.empty"), HubKeyboard(language))
 	}
 
-	h.mu.Lock()
-	if existing, running := h.runs[userID]; running {
-		existing() // a second "go" while one is in flight restarts it cleanly
+	// Acquire a global concurrency slot before disturbing anything. If the
+	// process is already running the max, refuse politely and leave
+	// whatever this user had running (if anything) completely untouched.
+	select {
+	case h.dumpSlots <- struct{}{}:
+	default:
+		return h.presentText(ctx, cb, chatID, h.i18n.Text(language, "positions.dump_busy"), HubKeyboard(language))
 	}
-	h.mu.Unlock()
 
 	runCtx, cancel := context.WithCancel(context.Background())
 
-	// The map entry is only installed once the goroutine is actually about
-	// to start. If presentText fails (a plausible transient Telegram error)
-	// the goroutine never launches, so nothing would ever run runDump's
-	// deferred cleanup — installing the entry earlier would leave a stale
-	// cancel func in h.runs forever, silently no-op'd by a later
-	// pos:dump:stop. Cancel our own context on that path so it is never
-	// leaked either.
+	// Send the confirmation BEFORE touching any run already in flight for
+	// this user. If this fails (a plausible transient Telegram error) the
+	// old run — if any — must keep running exactly as it was: the user's
+	// dump must never go silently dark just because a restart attempt could
+	// not even confirm itself. Release the slot we just acquired too, since
+	// no goroutine is going to start to release it for us.
 	if err := h.presentText(ctx, cb, chatID, h.i18n.Text(language, "positions.dump_started"), dumpStopKeyboard(language)); err != nil {
 		cancel()
+		<-h.dumpSlots
 		return err
 	}
 
+	run := &dumpRun{cancel: cancel}
 	h.mu.Lock()
-	h.runs[userID] = cancel
+	existing := h.runs[userID]
+	h.runs[userID] = run
 	h.mu.Unlock()
+	if existing != nil {
+		// Only now, once the new run is fully committed to starting (its
+		// confirmation already sent, its entry already installed), tear
+		// down whatever was running before. Cancelling any earlier than
+		// this is what let a failed confirmation kill a perfectly healthy
+		// run for nothing.
+		existing.cancel()
+	}
 
-	go h.runDump(runCtx, chatID, userID, language, items, marks)
+	go h.runDump(runCtx, chatID, userID, language, items, marks, run)
 	return nil
 }
 
-func (h *Handler) runDump(ctx context.Context, chatID, userID int64, language string, items []catalog.Item, marks map[string]storage.PositionMark) {
-	defer func() {
-		h.mu.Lock()
-		delete(h.runs, userID)
-		h.mu.Unlock()
+func (h *Handler) runDump(ctx context.Context, chatID, userID int64, language string, items []catalog.Item, marks map[string]storage.PositionMark, run *dumpRun) {
+	// The cleanup — releasing this run's h.runs entry and its concurrency
+	// slot — happens inside this inner call, and therefore completes BEFORE
+	// the completion message below is ever sent. Doing it as a plain
+	// deferred statement in runDump itself would instead run it after
+	// SendMessage returns: a full Telegram round trip during which a
+	// restarted run's freshly-installed entry sat exposed to being deleted
+	// by this (stale) goroutine's cleanup. The `h.runs[userID] == run` check
+	// closes that race for good — only a run that still owns the map entry
+	// may remove it — but shrinking the window further keeps it belt and
+	// braces.
+	sent, err := func() (int, error) {
+		defer func() {
+			h.mu.Lock()
+			if h.runs[userID] == run {
+				delete(h.runs, userID)
+			}
+			h.mu.Unlock()
+			<-h.dumpSlots
+		}()
+		sender := &dumpSender{h: h, chatID: chatID, language: language, marks: marks, total: len(items)}
+		return Dump(ctx, sender, DumpOptions{Items: items, Interval: h.dumpInterval})
 	}()
-
-	sender := &dumpSender{h: h, chatID: chatID, language: language, marks: marks, total: len(items)}
-	sent, err := Dump(ctx, sender, DumpOptions{Items: items, Interval: h.dumpInterval})
 
 	var text string
 	switch {
@@ -548,12 +651,17 @@ func (h *Handler) runDump(ctx context.Context, chatID, userID int64, language st
 
 func (h *Handler) stopDump(ctx context.Context, cb *telegram.CallbackQuery, chatID, userID int64, language string) error {
 	h.mu.Lock()
-	cancel, running := h.runs[userID]
+	run, running := h.runs[userID]
 	h.mu.Unlock()
 	if running {
-		cancel()
+		run.cancel()
+		return nil
 	}
-	return nil
+	// Acknowledge it: a silent no-op here reads as a broken button to a
+	// user who taps stop and sees nothing happen. Reusing dump_stopped with
+	// a 0 count needs no new i18n key and says exactly what is true —
+	// nothing was running, nothing was sent.
+	return h.presentText(ctx, cb, chatID, sprintfSafe(h.i18n.Text(language, "positions.dump_stopped"), 0), HubKeyboard(language))
 }
 
 // dumpSender adapts Handler's photo-sending machinery to positions.Sender,

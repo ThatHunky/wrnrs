@@ -109,6 +109,7 @@
     "positions.dump_started": "Sending. You can stop with the button below.",
     "positions.dump_stopped": "Stopped. Sent %d.",
     "positions.dump_done": "Done. Sent %d.",
+    "positions.dump_busy": "Too many sends running right now. Try again shortly.",
     "positions.filters": "Filters\n\nFound: %d"
   }
 }
