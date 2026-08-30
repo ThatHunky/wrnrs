@@ -138,20 +138,20 @@ func run(logger *slog.Logger) error {
 	}
 
 	bot := telegram.NewClient(cfg.BotToken)
-	application := app.New(app.Options{
-		Config:      cfg,
-		Bot:         bot,
-		Repo:        repo,
-		State:       redisStore,
-		I18N:        bundle,
-		Deck:        deck,
-		Renderer:    render.NewCardRenderer(render.CardRendererOptions{FontPath: cfg.CardFontPath}),
-		Styles:      styles,
-		Backgrounds: backgrounds,
-		Fonts:       fonts,
-		ObjectStore: appObjectStore(minioStore),
-		Logger:      logger,
-	})
+	application := app.New(buildAppOptions(
+		cfg,
+		bot,
+		repo,
+		redisStore,
+		bundle,
+		deck,
+		render.NewCardRenderer(render.CardRendererOptions{FontPath: cfg.CardFontPath}),
+		styles,
+		backgrounds,
+		fonts,
+		minioStore,
+		logger,
+	))
 
 	// The positions catalog module is optional content, not core plumbing:
 	// a missing or invalid content/positions.v1.json must never stop the
@@ -166,15 +166,15 @@ func run(logger *slog.Logger) error {
 	} else if err := positionsCatalog.Validate([]string{"uk", "en"}); err != nil {
 		logger.Warn("positions catalog invalid; module disabled", "err", err)
 	} else {
-		positionsHandler := positions.NewHandler(positions.HandlerOptions{
-			Service:     positions.NewService(positions.ServiceOptions{Catalog: positionsCatalog}),
-			Catalog:     positionsCatalog,
-			Repository:  repo,
-			Bot:         bot,
-			State:       redisStore,
-			ObjectStore: positionsObjectStore(positionsStore),
-			I18n:        bundle,
-		})
+		positionsHandler := positions.NewHandler(buildPositionsHandlerOptions(
+			positions.NewService(positions.ServiceOptions{Catalog: positionsCatalog}),
+			positionsCatalog,
+			repo,
+			bot,
+			redisStore,
+			positionsStore,
+			bundle,
+		))
 		if err := application.Registry().Register(modules.Module{
 			ID:             "positions",
 			TitleKey:       "module.positions",
@@ -272,6 +272,68 @@ func positionsObjectStore(store *objectstore.MinIOStore) positions.ObjectStore {
 		return nil
 	}
 	return store
+}
+
+// buildAppOptions assembles app.Options exactly the way run() wires it, so
+// that the ObjectStore field construction (routed through appObjectStore,
+// see above) is exercised at the real call site rather than only in
+// isolation. Keeping this as a plain, side-effect-free function of its
+// arguments lets a test call it directly with a *objectstore.MinIOStore(nil)
+// and assert the resulting ObjectStore field is a genuinely nil interface —
+// which would fail if a future edit reverted the ObjectStore line back to a
+// direct `minioStore` assignment.
+func buildAppOptions(
+	cfg config.Config,
+	bot app.Bot,
+	repo *storage.Repository,
+	redisStore *state.RedisStore,
+	bundle *i18n.Bundle,
+	deck *content.Deck,
+	renderer *render.CardRenderer,
+	styles *content.StyleCatalog,
+	backgrounds *content.BackgroundCatalog,
+	fonts *content.FontCatalog,
+	minioStore *objectstore.MinIOStore,
+	logger *slog.Logger,
+) app.Options {
+	return app.Options{
+		Config:      cfg,
+		Bot:         bot,
+		Repo:        repo,
+		State:       redisStore,
+		I18N:        bundle,
+		Deck:        deck,
+		Renderer:    renderer,
+		Styles:      styles,
+		Backgrounds: backgrounds,
+		Fonts:       fonts,
+		ObjectStore: appObjectStore(minioStore),
+		Logger:      logger,
+	}
+}
+
+// buildPositionsHandlerOptions is the positions.HandlerOptions analogue of
+// buildAppOptions above: it assembles the options struct exactly the way
+// run() wires it, so the ObjectStore field construction (routed through
+// positionsObjectStore) is pinned at the real call site.
+func buildPositionsHandlerOptions(
+	service *positions.Service,
+	positionsCatalog *catalog.Catalog,
+	repo *storage.Repository,
+	bot positions.Bot,
+	redisStore *state.RedisStore,
+	positionsStore *objectstore.MinIOStore,
+	bundle *i18n.Bundle,
+) positions.HandlerOptions {
+	return positions.HandlerOptions{
+		Service:     service,
+		Catalog:     positionsCatalog,
+		Repository:  repo,
+		Bot:         bot,
+		State:       redisStore,
+		ObjectStore: positionsObjectStore(positionsStore),
+		I18n:        bundle,
+	}
 }
 
 func webhookSecretMatches(configured, received string) bool {
