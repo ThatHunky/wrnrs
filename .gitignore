@@ -22,3 +22,6 @@ worktrees/
 positions-images/
 ingest-progress.json
 review.json
+
+# built one-off tools
+ingest-positions
