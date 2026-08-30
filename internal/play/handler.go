@@ -258,12 +258,24 @@ func (h *Handler) showHub(ctx context.Context, cb *telegram.CallbackQuery, chatI
 // skipped card stays the same player's problem instead of becoming their
 // partner's.
 //
+// The flip only ever happens when a pair exists. Without one, resolveActor
+// already renders no name either way, so flipping TurnB would have no
+// visible effect today — but it would still persist, silently, in Redis.
+// A solo player who tapped play:next an odd number of times before ever
+// pairing up would then have their first PAIRED card address partner B
+// instead of A, with nothing anywhere to explain why. Gating the flip on
+// pair != nil keeps a solo session's TurnB pinned at its zero value the
+// entire time it is solo, so there is nothing stale left for pairing to
+// inherit.
+//
 // One repository call (ActivePairForUser) is unconditional; a second
 // (UserDisplayName) only runs when a pair exists, since a solo draw has no
-// actor to name at all. Neither Service.Next nor the state read/write touch
-// SQLite — GameState lives in Redis, never in storage.Repository — so a
-// paired play:next costs exactly two database queries, a solo one exactly
-// one.
+// actor to name at all. HandleCallback's own language() lookup adds a
+// third UserLanguage call before dispatch even reaches this method — the
+// same pattern internal/positions and internal/wishlist use. Neither
+// Service.Next nor the state read/write touch SQLite — GameState lives in
+// Redis, never in storage.Repository — so a paired play:next costs exactly
+// three database queries, a solo one exactly two.
 func (h *Handler) showCard(ctx context.Context, cb *telegram.CallbackQuery, chatID, userID int64, language string, flipTurn bool) error {
 	pair, err := h.repo.ActivePairForUser(ctx, userID)
 	if err != nil {
@@ -288,7 +300,7 @@ func (h *Handler) showCard(ctx context.Context, cb *telegram.CallbackQuery, chat
 		// fix it, rather than rendering a blank or stale card.
 		return h.presentText(ctx, cb, chatID, h.i18n.Text(language, "play.empty"), FiltersKeyboard(h.i18n, language, state.Filter))
 	}
-	if flipTurn {
+	if flipTurn && pair != nil {
 		next.TurnB = !turnB
 	}
 	h.saveState(ctx, userID, next)

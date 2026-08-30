@@ -401,6 +401,42 @@ func TestPlayNextFlipsTurnButSkipDoesNot(t *testing.T) {
 	}
 }
 
+// TestPlaySoloNextNeverFlipsThePersistedTurn pins the fix for the review
+// finding that a solo play:next still flipped and persisted TurnB even
+// though resolveActor never shows a name without a pair. Without this
+// guard, a solo player tapping play:next an odd number of times before
+// ever pairing up would silently leave TurnB=true in Redis; once they
+// later paired, the very first PAIRED card would then address partner B
+// instead of A, with nothing anywhere explaining why. Decoding the
+// PERSISTED state (not just the rendered caption, which
+// TestPlayCardCaptionWithoutPairHasNoActorName already covers and which a
+// flipped-but-unused TurnB cannot fail) is the only way this bug is
+// visible at all — it is exactly what let it slip through review
+// originally. Three taps (an odd count) is deliberate: it is the case
+// that would actually flip an unguarded TurnB to true.
+func TestPlaySoloNextNeverFlipsThePersistedTurn(t *testing.T) {
+	state := &fakePlayState{}
+	h := newPlayHandlerWithState(&fakePlayRepo{pair: nil}, &fakePlayBot{}, state)
+
+	for i := 0; i < 3; i++ {
+		if err := h.HandleCallback(context.Background(), playCallback(1, "play:next")); err != nil {
+			t.Fatalf("HandleCallback(play:next) #%d: %v", i, err)
+		}
+	}
+
+	saved, ok := state.values[1]
+	if !ok {
+		t.Fatal("solo play:next did not save any state")
+	}
+	decoded, err := play.DecodeState(saved)
+	if err != nil {
+		t.Fatalf("decode saved state: %v", err)
+	}
+	if decoded.TurnB {
+		t.Fatal("solo play:next flipped the persisted TurnB; without a pair there is nobody to flip the turn to")
+	}
+}
+
 // TestPlayHandleCallbackRefusesGroupChats pins the same guard
 // internal/positions and internal/wishlist apply: a callback whose message
 // came from a shared chat must never reach the repository, regardless of
