@@ -498,13 +498,25 @@ func (h *Handler) startDump(ctx context.Context, cb *telegram.CallbackQuery, cha
 	if existing, running := h.runs[userID]; running {
 		existing() // a second "go" while one is in flight restarts it cleanly
 	}
-	runCtx, cancel := context.WithCancel(context.Background())
-	h.runs[userID] = cancel
 	h.mu.Unlock()
 
+	runCtx, cancel := context.WithCancel(context.Background())
+
+	// The map entry is only installed once the goroutine is actually about
+	// to start. If presentText fails (a plausible transient Telegram error)
+	// the goroutine never launches, so nothing would ever run runDump's
+	// deferred cleanup — installing the entry earlier would leave a stale
+	// cancel func in h.runs forever, silently no-op'd by a later
+	// pos:dump:stop. Cancel our own context on that path so it is never
+	// leaked either.
 	if err := h.presentText(ctx, cb, chatID, h.i18n.Text(language, "positions.dump_started"), dumpStopKeyboard(language)); err != nil {
+		cancel()
 		return err
 	}
+
+	h.mu.Lock()
+	h.runs[userID] = cancel
+	h.mu.Unlock()
 
 	go h.runDump(runCtx, chatID, userID, language, items, marks)
 	return nil
