@@ -277,4 +277,202 @@ func TestLoadCatalogOnMissingOrMalformedFileYieldsEmptyCatalog(t *testing.T) {
 	if malformed.Kind != "positions" || malformed.Version != 1 || len(malformed.Items) != 0 {
 		t.Fatalf("loadCatalog(malformed) = %+v, want an empty positions/v1 catalog", malformed)
 	}
+
+	// loadProgress must degrade the same way: a missing file is the normal
+	// first-run state, and a corrupt-but-present file must not be confused
+	// with "nothing has run yet" — both must yield empty progress rather
+	// than a fatal error, since the operator needs the crawl restartable.
+	missingProgress := loadProgress(filepath.Join(dir, "progress-does-not-exist.json"))
+	if missingProgress.Done == nil || len(missingProgress.Done) != 0 {
+		t.Fatalf("loadProgress(missing) = %+v, want empty Done map", missingProgress)
+	}
+
+	malformedProgressPath := filepath.Join(dir, "malformed-progress.json")
+	if err := os.WriteFile(malformedProgressPath, []byte("{not valid json"), 0o644); err != nil {
+		t.Fatalf("write malformed progress: %v", err)
+	}
+	malformedProgress := loadProgress(malformedProgressPath)
+	if malformedProgress.Done == nil || len(malformedProgress.Done) != 0 || len(malformedProgress.Review) != 0 {
+		t.Fatalf("loadProgress(malformed) = %+v, want empty progress", malformedProgress)
+	}
+}
+
+// TestCommitPageDoesNotMarkDoneWhenCatalogWriteFails proves Finding 1's fix:
+// the catalog write must land before the page is marked done. It forces the
+// catalog write to fail by pointing catalogPath at a directory with no write
+// permission, then asserts the page was left undone so a resumed run
+// re-fetches it instead of silently losing the item.
+func TestCommitPageDoesNotMarkDoneWhenCatalogWriteFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: directory permissions are not enforced, so the write would not fail")
+	}
+
+	dir := t.TempDir()
+	imagesDir := filepath.Join(dir, "images")
+	if err := os.MkdirAll(imagesDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll images: %v", err)
+	}
+	readOnlyDir := filepath.Join(dir, "readonly")
+	if err := os.MkdirAll(readOnlyDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll readonly: %v", err)
+	}
+	if err := os.Chmod(readOnlyDir, 0o500); err != nil {
+		t.Fatalf("Chmod readonly: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(readOnlyDir, 0o755) }) // let TempDir clean up
+
+	catalogPath := filepath.Join(readOnlyDir, "catalog.json")
+	resumePath := filepath.Join(dir, "progress.json")
+
+	item := catalog.Item{
+		ID:   "519",
+		Text: map[string]catalog.ItemText{"en": {Title: "Revelation"}},
+		Media: &catalog.MediaRef{
+			Key: "positions/519.png",
+		},
+	}
+	items := map[string]catalog.Item{}
+	state := progress{Done: map[string]bool{}}
+
+	err := commitPage(519, item, []byte("fake-image-bytes"), imagesDir, items, state, resumePath, catalogPath)
+	if err == nil {
+		t.Fatal("commitPage returned nil error despite an unwritable catalog path; want a propagated error")
+	}
+	if state.Done["519"] {
+		t.Fatal("state.Done[519] = true, want the page left undone when the catalog write failed")
+	}
+	if _, ok := items["519"]; ok {
+		t.Fatal("items still contains 519 after a failed catalog write; want it rolled back")
+	}
+	if _, err := os.Stat(resumePath); !os.IsNotExist(err) {
+		t.Fatalf("progress file was written despite the catalog write failing: stat err = %v", err)
+	}
+}
+
+// TestWriteFileAtomicLeavesNoStrayTempFiles proves Finding 2's atomicity
+// fix: after a successful write, the target directory contains exactly the
+// target file and nothing else — no leftover ".tmp-*" file from the
+// write-then-rename sequence.
+func TestWriteFileAtomicLeavesNoStrayTempFiles(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "catalog.json")
+
+	if err := writeFileAtomic(target, []byte(`{"kind":"positions"}`), 0o644); err != nil {
+		t.Fatalf("writeFileAtomic: %v", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "catalog.json" {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Fatalf("directory contents after writeFileAtomic = %v, want only [catalog.json]", names)
+	}
+
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != `{"kind":"positions"}` {
+		t.Fatalf("file contents = %q, want the written data", data)
+	}
+}
+
+// TestWriteCatalogIsAtomic exercises the same guarantee through the real
+// writeCatalog entry point, since that is what commitPage calls up to 519
+// times per run.
+func TestWriteCatalogIsAtomic(t *testing.T) {
+	dir := t.TempDir()
+	catalogPath := filepath.Join(dir, "catalog.json")
+
+	items := map[string]catalog.Item{
+		"001": {ID: "001", Text: map[string]catalog.ItemText{"en": {Title: "First"}}},
+	}
+	if err := writeCatalog(catalogPath, items); err != nil {
+		t.Fatalf("writeCatalog: %v", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "catalog.json" {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Fatalf("directory contents after writeCatalog = %v, want only [catalog.json]", names)
+	}
+}
+
+// TestFinishWritesBothFilesThenReturnsErrorNamingUnknownSlugs proves Finding
+// 3's fix: finish must write the catalog and the review file before it
+// reports unknown slugs, and the returned error must name every one of them
+// (sorted). A regression that moved the unknown-slug error above the writes
+// would leave these files absent while still returning an error, which this
+// test would catch.
+func TestFinishWritesBothFilesThenReturnsErrorNamingUnknownSlugs(t *testing.T) {
+	dir := t.TempDir()
+	catalogPath := filepath.Join(dir, "catalog.json")
+	reviewPath := filepath.Join(dir, "review.json")
+
+	items := map[string]catalog.Item{
+		"001": {ID: "001", Text: map[string]catalog.ItemText{"en": {Title: "First"}}},
+	}
+	review := []reviewEntry{{Number: 2, URL: "https://example.test/2.html", Reason: "boom"}}
+	unknown := map[string]bool{"zebra-slug": true, "aardvark-slug": true}
+
+	err := finish(catalogPath, reviewPath, "content/positions.taxonomy.json", items, review, unknown)
+	if err == nil {
+		t.Fatal("finish returned nil error despite unknown slugs; want a non-nil error")
+	}
+	if !strings.Contains(err.Error(), "aardvark-slug, zebra-slug") {
+		t.Fatalf("finish error = %q, want it to name both unknown slugs in sorted order", err.Error())
+	}
+
+	onDiskCatalog := loadCatalog(catalogPath)
+	if _, ok := onDiskCatalog.Item("001"); !ok {
+		t.Fatalf("catalog file at %s was not written before finish returned its error", catalogPath)
+	}
+
+	reviewData, err := os.ReadFile(reviewPath)
+	if err != nil {
+		t.Fatalf("review file at %s was not written before finish returned its error: %v", reviewPath, err)
+	}
+	var onDiskReview []reviewEntry
+	if err := json.Unmarshal(reviewData, &onDiskReview); err != nil {
+		t.Fatalf("unmarshal review file: %v", err)
+	}
+	if len(onDiskReview) != 1 || onDiskReview[0].Number != 2 {
+		t.Fatalf("review file contents = %+v, want the one review entry", onDiskReview)
+	}
+}
+
+// TestFinishWritesBothFilesAndReturnsNilWhenNoUnknownSlugs is the mirror
+// case: with no unknown slugs, finish still writes both files and reports
+// success.
+func TestFinishWritesBothFilesAndReturnsNilWhenNoUnknownSlugs(t *testing.T) {
+	dir := t.TempDir()
+	catalogPath := filepath.Join(dir, "catalog.json")
+	reviewPath := filepath.Join(dir, "review.json")
+
+	items := map[string]catalog.Item{
+		"001": {ID: "001", Text: map[string]catalog.ItemText{"en": {Title: "First"}}},
+	}
+
+	if err := finish(catalogPath, reviewPath, "content/positions.taxonomy.json", items, nil, map[string]bool{}); err != nil {
+		t.Fatalf("finish: %v", err)
+	}
+
+	onDiskCatalog := loadCatalog(catalogPath)
+	if _, ok := onDiskCatalog.Item("001"); !ok {
+		t.Fatalf("catalog file at %s does not contain item 001", catalogPath)
+	}
+	if _, err := os.Stat(reviewPath); err != nil {
+		t.Fatalf("review file at %s was not written: %v", reviewPath, err)
+	}
 }

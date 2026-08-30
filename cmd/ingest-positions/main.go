@@ -130,24 +130,34 @@ func main() {
 		log.Printf("position %d: %s", number, page.Name)
 	}
 
-	// Write the catalog and review file BEFORE failing loudly on unknown
-	// slugs. Unknown slugs are an expected outcome of a first crawl over
-	// real data, not an edge case, so the run's completed work must be
-	// safely on disk before the process can exit non-zero.
-	if err := writeCatalog(*out, items); err != nil {
-		log.Fatalf("write catalog: %v", err)
+	if err := finish(*out, *reviewPath, *taxonomyPath, items, state.Review, unknownSlugs); err != nil {
+		log.Fatalf("%v", err)
 	}
-	writeReview(*reviewPath, state.Review)
-	log.Printf("wrote %d items to %s; %d pages need manual review", len(items), *out, len(state.Review))
+}
 
-	if len(unknownSlugs) > 0 {
-		slugs := make([]string, 0, len(unknownSlugs))
-		for slug := range unknownSlugs {
+// finish runs the post-loop finishing sequence: it writes the catalog and
+// the review file, and only once both writes have happened does it report
+// unknown tag slugs as an error. This ordering matters: unknown slugs are an
+// expected outcome of a first crawl over real data, not an edge case, so the
+// run's completed work must be safely on disk before the process can exit
+// non-zero. main calls this and does the log.Fatal itself, so a caller (or a
+// test) can observe the writes and the error independently of process exit.
+func finish(catalogPath, reviewPath, taxonomyPath string, items map[string]catalog.Item, review []reviewEntry, unknown map[string]bool) error {
+	if err := writeCatalog(catalogPath, items); err != nil {
+		return fmt.Errorf("write catalog: %w", err)
+	}
+	writeReview(reviewPath, review)
+	log.Printf("wrote %d items to %s; %d pages need manual review", len(items), catalogPath, len(review))
+
+	if len(unknown) > 0 {
+		slugs := make([]string, 0, len(unknown))
+		for slug := range unknown {
 			slugs = append(slugs, slug)
 		}
 		sort.Strings(slugs)
-		log.Fatalf("unknown tag slugs encountered: %s\nadd them to %s and re-run", strings.Join(slugs, ", "), *taxonomyPath)
+		return fmt.Errorf("unknown tag slugs encountered: %s\nadd them to %s and re-run", strings.Join(slugs, ", "), taxonomyPath)
 	}
+	return nil
 }
 
 func buildItem(page positions.ParsedPage, tax *positions.Taxonomy) (catalog.Item, []string, error) {
@@ -188,15 +198,18 @@ func processPage(number int, page positions.ParsedPage, tax *positions.Taxonomy,
 	return nil, commitPage(number, item, imageBytes, imagesDir, items, state, resumePath, catalogPath)
 }
 
-// commitPage writes item's image to disk, adds item to items, marks the page
-// done, and persists both the progress file and the catalog immediately.
-// Persisting the catalog on every successful page — not just once at the end
-// of the whole crawl — is what makes the crawl safe to kill or crash at any
-// point: state.Done and the catalog file are updated together, so a resumed
-// run's "skip if already done" check can never silently outrun what the
-// catalog actually contains. The crawl is I/O-bound at 1 request/second, so
-// re-marshaling a few hundred KB of JSON on every page is immaterial next to
-// the network wait.
+// commitPage writes item's image to disk, then persists the catalog with
+// item included, and ONLY once that write has succeeded marks the page done
+// and persists progress. This order is load-bearing: state.Done is the
+// resume loop's sole "skip this page" signal, so if it were set before the
+// catalog write landed, a kill between the two writes would leave the page
+// marked done while its item never reached the catalog — silently losing it
+// forever. Persisting the catalog on every successful page — not just once
+// at the end of the whole crawl — is what makes the crawl safe to kill or
+// crash at any point: a crash between the two writes now costs at most one
+// harmless re-fetch on resume, never a lost item. The crawl is I/O-bound at
+// 1 request/second, so re-marshaling a few hundred KB of JSON on every page
+// is immaterial next to the network wait.
 func commitPage(number int, item catalog.Item, imageBytes []byte, imagesDir string, items map[string]catalog.Item, state progress, resumePath, catalogPath string) error {
 	target := filepath.Join(imagesDir, filepath.Base(item.Media.Key))
 	if err := os.WriteFile(target, imageBytes, 0o644); err != nil {
@@ -204,15 +217,16 @@ func commitPage(number int, item catalog.Item, imageBytes []byte, imagesDir stri
 	}
 
 	items[item.ID] = item
+	if err := writeCatalog(catalogPath, items); err != nil {
+		// Roll back the in-memory addition so items keeps mirroring what
+		// actually made it to disk, and do NOT mark the page done: a
+		// later run must re-fetch it rather than silently skip it.
+		delete(items, item.ID)
+		return fmt.Errorf("write catalog: %w", err)
+	}
+
 	state.Done[strconv.Itoa(number)] = true
 	saveProgress(resumePath, state)
-
-	if err := writeCatalog(catalogPath, items); err != nil {
-		// Non-fatal per page: one write hiccup must not abort a
-		// ~17-minute crawl, but it must never be silent either — this
-		// file is the run's entire deliverable.
-		log.Printf("position %d: write catalog: %v", number, err)
-	}
 	return nil
 }
 
@@ -239,13 +253,26 @@ func fetch(client *http.Client, url string) ([]byte, int, error) {
 	return body, resp.StatusCode, err
 }
 
+// loadProgress reads the resume file, distinguishing "file does not exist"
+// (the normal state on a first run — stay silent) from "file exists but
+// failed to parse" (corruption — log a clear warning and fall back to empty
+// progress rather than fail the run). Silently resetting to empty progress
+// without a warning would be dangerous here: the catalog on disk may still
+// contain everything the progress file forgot, but the operator needs to
+// know the two have diverged.
 func loadProgress(path string) progress {
 	state := progress{Done: map[string]bool{}}
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("load progress: read %s: %v", path, err)
+		}
 		return state
 	}
-	_ = json.Unmarshal(data, &state)
+	if err := json.Unmarshal(data, &state); err != nil {
+		log.Printf("load progress: %s exists but failed to parse, starting from empty progress: %v", path, err)
+		return progress{Done: map[string]bool{}}
+	}
 	if state.Done == nil {
 		state.Done = map[string]bool{}
 	}
@@ -255,20 +282,34 @@ func loadProgress(path string) progress {
 func saveProgress(path string, state progress) {
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
+		log.Printf("save progress: marshal: %v", err)
 		return
 	}
-	_ = os.WriteFile(path, data, 0o644)
+	if err := writeFileAtomic(path, data, 0o644); err != nil {
+		log.Printf("save progress: %v", err)
+	}
 }
 
+// loadCatalog reads the catalog file, distinguishing "file does not exist"
+// (the normal state on a first run — stay silent) from "file exists but
+// failed to parse" (corruption — log a clear warning and fall back to an
+// empty catalog rather than fail the run). Without the warning, a corrupted
+// catalog would silently reset the whole crawl to empty while the progress
+// file still marks pages done, orphaning every item already collected with
+// no sign anything went wrong.
 func loadCatalog(path string) catalog.Catalog {
 	c := catalog.Catalog{Kind: "positions", Version: 1}
 	file, err := os.Open(path)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("load catalog: open %s: %v", path, err)
+		}
 		return c
 	}
 	defer file.Close()
 	loaded, err := catalog.Load(file)
 	if err != nil {
+		log.Printf("load catalog: %s exists but failed to parse, starting from empty catalog: %v", path, err)
 		return c
 	}
 	return *loaded
@@ -289,7 +330,7 @@ func writeCatalog(path string, items map[string]catalog.Item) error {
 	if err != nil {
 		return fmt.Errorf("marshal catalog: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := writeFileAtomic(path, data, 0o644); err != nil {
 		return fmt.Errorf("write catalog: %w", err)
 	}
 	return nil
@@ -298,7 +339,49 @@ func writeCatalog(path string, items map[string]catalog.Item) error {
 func writeReview(path string, entries []reviewEntry) {
 	data, err := json.MarshalIndent(entries, "", "  ")
 	if err != nil {
+		log.Printf("write review: marshal: %v", err)
 		return
 	}
-	_ = os.WriteFile(path, data, 0o644)
+	if err := writeFileAtomic(path, data, 0o644); err != nil {
+		log.Printf("write review: %v", err)
+	}
+}
+
+// writeFileAtomic writes data to a temporary file in the same directory as
+// path, then renames it over path. Same-directory placement matters: rename
+// is only atomic within a single filesystem, so a temp file elsewhere (e.g.
+// the system temp dir) could make the final step a cross-filesystem copy
+// instead of an atomic rename. A reader can therefore only ever see the
+// previous complete contents of path or the new complete contents, never a
+// torn write. If anything fails before the rename, the temp file is removed
+// so a killed or erroring run leaves no stray files behind.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+	renamed := false
+	defer func() {
+		if !renamed {
+			_ = os.Remove(tmpName)
+		}
+	}()
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	if err := os.Chmod(tmpName, perm); err != nil {
+		return fmt.Errorf("chmod temp file: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("rename temp file: %w", err)
+	}
+	renamed = true
+	return nil
 }
