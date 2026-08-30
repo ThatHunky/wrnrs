@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "slugs": {
+    "easy-level":                {"facet": "level", "value": "easy"},
+    "medium-level":              {"facet": "level", "value": "medium"},
+    "hard-level":                {"facet": "level", "value": "hard"},
+    "crazy":                     {"facet": "level", "value": "crazy"},
+
+    "missionary":                {"facet": "type", "value": "missionary"},
+    "doggy-style":               {"facet": "type", "value": "doggy-style"},
+    "cowgirl":                   {"facet": "type", "value": "cowgirl"},
+    "69-sex-position":           {"facet": "type", "value": "69"},
+    "man-on-top":                {"facet": "type", "value": "man-on-top"},
+    "woman-on-top":              {"facet": "type", "value": "woman-on-top"},
+    "from-behind":               {"facet": "type", "value": "from-behind"},
+    "face-to-face":              {"facet": "type", "value": "face-to-face"},
+    "criss-cross":               {"facet": "type", "value": "criss-cross"},
+    "lying-down":                {"facet": "type", "value": "lying-down"},
+    "sitting":                   {"facet": "type", "value": "sitting"},
+    "standing":                  {"facet": "type", "value": "standing"},
+
+    "clitoral-stimulation":      {"facet": "stimulation", "value": "clitoral"},
+    "g-spot-stimulation":        {"facet": "stimulation", "value": "g-spot"},
+    "a-spot-stimulation":        {"facet": "stimulation", "value": "a-spot"},
+    "deep-spot-stimulation":     {"facet": "stimulation", "value": "deep-spot"},
+    "hand-clitoris-stimulation": {"facet": "stimulation", "value": "hand-clitoris"},
+
+    "deep-penetration":          {"facet": "penetration", "value": "deep"},
+    "middle-penetration":        {"facet": "penetration", "value": "middle"},
+    "shallow-penetration":       {"facet": "penetration", "value": "shallow"},
+    "no-penetration":            {"facet": "penetration", "value": "none"},
+
+    "bed":                       {"facet": "location", "value": "bed"},
+    "sofa":                      {"facet": "location", "value": "sofa"},
+    "chair":                     {"facet": "location", "value": "chair"},
+    "table":                     {"facet": "location", "value": "table"},
+    "armchair":                  {"facet": "location", "value": "armchair"},
+    "car":                       {"facet": "location", "value": "car"},
+    "shower":                    {"facet": "location", "value": "shower"},
+    "fitness-ball":              {"facet": "location", "value": "fitness-ball"},
+
+    "man-active":                {"facet": "activity", "value": "man-active"},
+    "woman-active":              {"facet": "activity", "value": "woman-active"},
+
+    "vaginal-sex":               {"facet": "act", "value": "vaginal"},
+    "anal-sex":                  {"facet": "act", "value": "anal"},
+    "anal-play":                 {"facet": "act", "value": "anal-play"},
+    "blowjob":                   {"facet": "act", "value": "blowjob"},
+    "cunnilingus":                {"facet": "act", "value": "cunnilingus"},
+    "anilingus-rimming":         {"facet": "act", "value": "rimming"},
+
+    "kissing":                   {"facet": "extra", "value": "kissing"},
+    "breast-kissing":            {"facet": "extra", "value": "breast-kissing"},
+    "breasts-touching":          {"facet": "extra", "value": "breasts-touching"}
+  }
+}
