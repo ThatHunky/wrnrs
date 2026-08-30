@@ -18,9 +18,93 @@ import (
 var ErrNotAPositionPage = errors.New("not a single-position page")
 
 var (
-	headingPattern = regexp.MustCompile(`^Sex position #(\d+)\.\s*(.+)$`)
-	tagPathPattern = regexp.MustCompile(`/tag/([^/?#"]+)`)
+	headingPattern    = regexp.MustCompile(`^Sex position #(\d+)\.\s*(.+)$`)
+	tagPathPattern    = regexp.MustCompile(`/tag/([^/?#"]+)`)
+	whitespaceRunPtrn = regexp.MustCompile(`\s+`)
 )
+
+// descriptionHeaderText is the exact (trimmed) text of the <div> that
+// introduces the full-length description block on a position page:
+//
+//	<div class='pos_headers'>Description:</div><hr>
+//	        <p>...full text...</p>
+//
+// The site caps og:description at ~160 characters, cutting the real text
+// mid-sentence, so the block above is preferred whenever it is present.
+const descriptionHeaderText = "Description:"
+
+// collapseWhitespace turns any run of whitespace (including newlines from
+// multi-line source markup) into a single space and trims the ends.
+func collapseWhitespace(s string) string {
+	return strings.TrimSpace(whitespaceRunPtrn.ReplaceAllString(s, " "))
+}
+
+// nodeText concatenates the text of every descendant text node of n. Because
+// golang.org/x/net/html already unescapes entities while tokenizing, and we
+// only ever collect TextNode data (never tag markup), this simultaneously
+// unescapes entities and strips inline tags.
+func nodeText(n *html.Node) string {
+	var sb strings.Builder
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.TextNode {
+			sb.WriteString(n.Data)
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(n)
+	return sb.String()
+}
+
+// hasClass reports whether n carries the given class among (possibly
+// several) space-separated classes in its class attribute. golang.org/x/net/html
+// normalizes away the quote style (' vs ") used in the source markup, so this
+// is tolerant of both by construction.
+func hasClass(n *html.Node, class string) bool {
+	for _, attr := range n.Attr {
+		if attr.Key != "class" {
+			continue
+		}
+		for _, c := range strings.Fields(attr.Val) {
+			if c == class {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// descriptionParagraph finds the <p> that follows a `Description:` header
+// div, tolerating an optional <hr> and any amount of whitespace/comment
+// nodes between the header, the optional <hr>, and the paragraph. It returns
+// nil if the expected shape isn't there, so callers can fall back safely.
+func descriptionParagraph(header *html.Node) *html.Node {
+	sawHR := false
+	for sib := header.NextSibling; sib != nil; sib = sib.NextSibling {
+		switch sib.Type {
+		case html.TextNode, html.CommentNode:
+			continue
+		case html.ElementNode:
+			switch sib.Data {
+			case "hr":
+				if sawHR {
+					return nil
+				}
+				sawHR = true
+				continue
+			case "p":
+				return sib
+			default:
+				return nil
+			}
+		default:
+			continue
+		}
+	}
+	return nil
+}
 
 type ParsedPage struct {
 	Number      int
@@ -37,11 +121,13 @@ func ParsePage(r io.Reader) (ParsedPage, error) {
 	}
 
 	var (
-		heading  string
-		metas    = map[string]string{}
-		slugSet  = map[string]bool{}
-		inH1     bool
-		headText strings.Builder
+		heading      string
+		metas        = map[string]string{}
+		slugSet      = map[string]bool{}
+		inH1         bool
+		headText     strings.Builder
+		fullDescBlk  string
+		foundDescBlk bool
 	)
 
 	var walk func(*html.Node)
@@ -81,6 +167,16 @@ func ParsePage(r io.Reader) (ParsedPage, error) {
 						slugSet[m[1]] = true
 					}
 				}
+			case "div":
+				if !foundDescBlk && hasClass(n, "pos_headers") &&
+					collapseWhitespace(nodeText(n)) == descriptionHeaderText {
+					if p := descriptionParagraph(n); p != nil {
+						if text := collapseWhitespace(nodeText(p)); text != "" {
+							fullDescBlk = text
+							foundDescBlk = true
+						}
+					}
+				}
 			}
 		}
 		if n.Type == html.TextNode && inH1 {
@@ -112,10 +208,15 @@ func ParsePage(r io.Reader) (ParsedPage, error) {
 	}
 	sort.Strings(slugs)
 
+	description := fullDescBlk
+	if description == "" {
+		description = strings.TrimSpace(metas["og:description"])
+	}
+
 	return ParsedPage{
 		Number:      number,
 		Name:        strings.TrimSpace(match[2]),
-		Description: strings.TrimSpace(metas["og:description"]),
+		Description: description,
 		ImageURL:    image,
 		TagSlugs:    slugs,
 	}, nil
