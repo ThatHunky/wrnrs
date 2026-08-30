@@ -2,7 +2,9 @@ package play
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -215,19 +217,35 @@ func (h *Handler) loadState(ctx context.Context, userID int64) GameState {
 	return state
 }
 
-// saveState persists state, best-effort. A nil StateStore or an encode
-// failure is silently a no-op: without Redis the session simply cannot
-// remember whose turn it is or which cards were recently drawn, but every
-// screen still renders and the game stays playable.
-func (h *Handler) saveState(ctx context.Context, userID int64, state GameState) {
+// saveState persists state and reports whether it got there. It used to
+// swallow the failure, which is what let showCard believe the module
+// degraded gracefully when it did not — see the comment on showCard's
+// unpersisted path.
+//
+// A nil StateStore is errStateNotPersisted rather than success: for every
+// caller the two are the same situation — nothing will be remembered — and
+// the one caller that has to react needs to react to both.
+func (h *Handler) saveState(ctx context.Context, userID int64, state GameState) error {
 	if h.state == nil {
-		return
+		return errStateNotPersisted
 	}
 	encoded, err := EncodeState(state)
 	if err != nil {
-		return
+		return err
 	}
-	_ = h.state.SetModuleState(ctx, userID, moduleName, encoded, stateTTL)
+	return h.state.SetModuleState(ctx, userID, moduleName, encoded, stateTTL)
+}
+
+// errStateNotPersisted marks the "there is nowhere to save this" case, so a
+// caller can tell it apart from a real Redis error worth logging.
+var errStateNotPersisted = errors.New("play: no state store configured")
+
+// drawNonce returns a value that differs between two taps a human could
+// make. It is the module's only use of the clock, and it exists solely to
+// break the determinism of an unpersisted draw (see showCard); Service
+// stays I/O-free by taking it as a parameter.
+func drawNonce() string {
+	return strconv.FormatInt(time.Now().UnixNano(), 36)
 }
 
 // --- screens -----------------------------------------------------------------
@@ -293,7 +311,7 @@ func (h *Handler) showCard(ctx context.Context, cb *telegram.CallbackQuery, chat
 		seed = pair.ID
 	}
 
-	item, next, err := h.service.Next(seed, state)
+	item, next, err := h.service.Next(seed, "", state)
 	if err != nil {
 		// An empty selection (every card filtered out) must not go silent:
 		// surface it as play.empty, with the filters screen right there to
@@ -303,7 +321,22 @@ func (h *Handler) showCard(ctx context.Context, cb *telegram.CallbackQuery, chat
 	if flipTurn && pair != nil {
 		next.TurnB = !turnB
 	}
-	h.saveState(ctx, userID, next)
+	if err := h.saveState(ctx, userID, next); err != nil {
+		// Nothing was persisted, so the next tap will load this same empty
+		// state: Draw stays 0, Seen stays empty, and the deterministic
+		// shuffle deals this very card again — and again. Telegram then
+		// rejects the byte-identical edit ("message is not modified"), so
+		// presentText falls back to SendMessage and every tap also spawns a
+		// duplicate message. Redrawing with a clock-derived nonce is what
+		// keeps the module playable: the turn no longer rotates and cards
+		// can repeat, but each tap deals something.
+		if !errors.Is(err, errStateNotPersisted) {
+			h.logger.Warn("play: save state", "error", err)
+		}
+		if redrawn, _, redrawErr := h.service.Next(seed, drawNonce(), state); redrawErr == nil {
+			item = redrawn
+		}
+	}
 
 	actor := h.resolveActor(ctx, pair, turnB, language)
 	caption := CardCaption(h.i18n, language, item, actor)
@@ -354,7 +387,12 @@ func (h *Handler) handleFilterToggle(ctx context.Context, cb *telegram.CallbackQ
 	}
 	state := h.loadState(ctx, userID)
 	state.Filter = ToggleFilterValue(state.Filter, facet, value)
-	h.saveState(ctx, userID, state)
+	if err := h.saveState(ctx, userID, state); err != nil && !errors.Is(err, errStateNotPersisted) {
+		// Nothing to recover here — showFilters re-reads the state and will
+		// simply render the toggle as not taken — but a Redis that is
+		// rejecting writes is worth one line in the log.
+		h.logger.Warn("play: save filter state", "error", err)
+	}
 	return h.showFilters(ctx, cb, chatID, userID, language)
 }
 

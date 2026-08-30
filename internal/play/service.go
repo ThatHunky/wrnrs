@@ -69,7 +69,16 @@ func (s *Service) Available(filter catalog.Filter) []catalog.Item {
 
 // Next draws a card and returns the updated state. It does not flip the
 // turn: that is the handler's call, because a skipped card must not.
-func (s *Service) Next(seedID int64, state GameState) (catalog.Item, GameState, error) {
+//
+// nonce is normally "", which keeps the draw fully deterministic in
+// (seedID, Draw): the same tap on the same state always deals the same
+// card. The handler passes a non-empty nonce only when the state it just
+// drew from could not be persisted — Draw will never advance, so without
+// something varying per tap every subsequent draw would replay the same
+// shuffle and deal the identical card forever. Keeping the nonce a
+// parameter is what lets this package stay I/O-free: the clock lives in the
+// handler, not here.
+func (s *Service) Next(seedID int64, nonce string, state GameState) (catalog.Item, GameState, error) {
 	items := s.Available(state.Filter)
 	if len(items) == 0 {
 		return catalog.Item{}, state, fmt.Errorf("no cards match the current filter")
@@ -86,9 +95,14 @@ func (s *Service) Next(seedID int64, state GameState) (catalog.Item, GameState, 
 		seen[id] = true
 	}
 
+	bucket := fmt.Sprintf("play:%d", state.Draw)
+	if nonce != "" {
+		bucket += ":" + nonce
+	}
+
 	item, _, _, err := catalog.SelectNext(catalog.SelectionInput{
 		SeedID: seedID,
-		Bucket: fmt.Sprintf("play:%d", state.Draw),
+		Bucket: bucket,
 		Items:  items,
 		Seen:   seen,
 	})

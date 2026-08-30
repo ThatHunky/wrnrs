@@ -2,6 +2,8 @@ package play_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -338,6 +340,20 @@ func (s *fakePlayState) ModuleState(_ context.Context, userID int64, _ string) (
 	return s.values[userID], nil
 }
 
+// failingPlayState is Redis after it has fallen over mid-session: reads
+// return nothing and writes fail. The bot hard-fails at boot without Redis,
+// so this is only reachable when Redis dies while someone is playing.
+type failingPlayState struct{ setCalls int }
+
+func (s *failingPlayState) SetModuleState(_ context.Context, _ int64, _, _ string, _ time.Duration) error {
+	s.setCalls++
+	return errors.New("redis is down")
+}
+
+func (s *failingPlayState) ModuleState(_ context.Context, _ int64, _ string) (string, error) {
+	return "", errors.New("redis is down")
+}
+
 // newPlayHandler builds a Handler with no StateStore wired at all — a true
 // nil interface, not a typed nil pointer wrapped in one — mirroring how the
 // live bot's own module wiring leaves State unset until Redis is available.
@@ -558,11 +574,61 @@ func TestPlayFilterToggleNeverPanicsOnMalformedCallbacks(t *testing.T) {
 	}
 }
 
+// TestPlayNextKeepsDealingFreshCardsWhenStateCannotBePersisted pins the fix
+// for the review finding that the documented "degrades but stays playable"
+// behaviour did not happen. With nothing persisted, Draw never advances, so
+// the bucket stays "play:0", Seen stays empty and SelectNext replays the
+// same deterministic shuffle: five taps returned the identical card five
+// times. Worse, the text being byte-identical makes Telegram reject the
+// edit with "message is not modified", so presentText falls back to
+// SendMessage and every tap also spawns a duplicate message.
+//
+// Twenty cards and eight taps: a run of eight identical draws by chance
+// would be a 20^-7 event, so a failure here means the nonce is not reaching
+// the shuffle rather than bad luck.
+func TestPlayNextKeepsDealingFreshCardsWhenStateCannotBePersisted(t *testing.T) {
+	items := make([]catalog.Item, 0, 20)
+	for i := 0; i < 20; i++ {
+		id := fmt.Sprintf("d%03d", i)
+		items = append(items, catalog.Item{
+			ID:     id,
+			Facets: map[string][]string{"kind": {"dare"}, "intensity": {"gentle"}},
+			Text:   map[string]catalog.ItemText{"uk": {Title: id, Body: "текст " + id}},
+		})
+	}
+	state := &failingPlayState{}
+	bot := &fakePlayBot{}
+	h := play.NewHandler(play.HandlerOptions{
+		Service:    play.NewService(play.ServiceOptions{Catalog: &catalog.Catalog{Kind: "play", Version: 1, Items: items}}),
+		Repository: &fakePlayRepo{},
+		Bot:        bot,
+		State:      state,
+		I18n:       handlerBundle(),
+	})
+
+	seen := map[string]bool{}
+	for i := 0; i < 8; i++ {
+		if err := h.HandleCallback(context.Background(), playCallback(1, "play:next")); err != nil {
+			t.Fatalf("HandleCallback(play:next) #%d: %v", i, err)
+		}
+		seen[lastText(bot)] = true
+	}
+	if state.setCalls == 0 {
+		t.Fatal("the handler never even tried to persist state")
+	}
+	if len(seen) < 2 {
+		t.Fatalf("eight taps against a broken state store dealt %d distinct card(s); with nothing persisted the draw must not stay deterministic, or every tap re-sends the identical message", len(seen))
+	}
+}
+
 // TestPlayHandlerToleratesNilStateStore drives every screen with no
 // StateStore wired at all. Redis is never actually absent in the live bot,
-// but the handler must still not dereference a nil StateStore: state simply
-// stops being read or written, and the game stays playable (turn rotation
-// degrades to always-the-same-actor, no-repeat degrades to always-fresh).
+// but the handler must still not dereference a nil StateStore: state stops
+// being read or written and the game stays playable, in the exact degraded
+// shape TestPlayNextKeepsDealingFreshCardsWhenStateCannotBePersisted pins —
+// the turn never rotates (every card names the first partner), there is no
+// no-repeat ring so a card can come back immediately, and each draw is
+// randomised by the clock nonce instead of being deterministic in Draw.
 func TestPlayHandlerToleratesNilStateStore(t *testing.T) {
 	repo := &fakePlayRepo{pair: &storage.Pair{ID: 1, UserAID: 10, UserBID: 20}}
 	bot := &fakePlayBot{}

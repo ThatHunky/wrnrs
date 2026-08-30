@@ -51,7 +51,7 @@ func TestAvailableAppliesTheFilter(t *testing.T) {
 func TestNextIncrementsDrawAndRecordsRecent(t *testing.T) {
 	svc := play.NewService(play.ServiceOptions{Catalog: testCatalog()})
 
-	item, state, err := svc.Next(42, play.GameState{})
+	item, state, err := svc.Next(42, "", play.GameState{})
 	if err != nil {
 		t.Fatalf("Next: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestNextPreservesTurnB(t *testing.T) {
 		t.Run(fmt.Sprintf("TurnB=%v", turnB), func(t *testing.T) {
 			svc := play.NewService(play.ServiceOptions{Catalog: testCatalog()})
 
-			_, state, err := svc.Next(42, play.GameState{TurnB: turnB})
+			_, state, err := svc.Next(42, "", play.GameState{TurnB: turnB})
 			if err != nil {
 				t.Fatalf("Next: %v", err)
 			}
@@ -98,7 +98,7 @@ func TestNextAvoidsRecentCards(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		var item catalog.Item
 		var err error
-		item, state, err = svc.Next(7, state)
+		item, state, err = svc.Next(7, "", state)
 		if err != nil {
 			t.Fatalf("draw %d: %v", i, err)
 		}
@@ -115,12 +115,12 @@ func TestNextClearsRecentWhenEverythingHasBeenSeen(t *testing.T) {
 	state := play.GameState{}
 	for i := 0; i < 6; i++ {
 		var err error
-		_, state, err = svc.Next(7, state)
+		_, state, err = svc.Next(7, "", state)
 		if err != nil {
 			t.Fatalf("draw %d: %v", i, err)
 		}
 	}
-	item, state, err := svc.Next(7, state)
+	item, state, err := svc.Next(7, "", state)
 	if err != nil {
 		t.Fatalf("draw after exhaustion: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestNextBoundsTheRecentRing(t *testing.T) {
 	state := play.GameState{}
 	for i := 0; i < 30; i++ {
 		var err error
-		_, state, err = svc.Next(3, state)
+		_, state, err = svc.Next(3, "", state)
 		if err != nil {
 			t.Fatalf("draw %d: %v", i, err)
 		}
@@ -179,11 +179,11 @@ func TestNextVariesTheShuffleBucketWhenSeenIsUnchanged(t *testing.T) {
 	svc := play.NewService(play.ServiceOptions{Catalog: &catalog.Catalog{Kind: "play", Version: 1, Items: items}})
 
 	recent := []string{"p001", "p002", "p003", "p004", "p005", "p006", "p007", "p008", "p009", "p010"}
-	first, _, err := svc.Next(11, play.GameState{Draw: 0, Recent: append([]string(nil), recent...)})
+	first, _, err := svc.Next(11, "", play.GameState{Draw: 0, Recent: append([]string(nil), recent...)})
 	if err != nil {
 		t.Fatalf("first draw: %v", err)
 	}
-	second, _, err := svc.Next(11, play.GameState{Draw: 1, Recent: append([]string(nil), recent...)})
+	second, _, err := svc.Next(11, "", play.GameState{Draw: 1, Recent: append([]string(nil), recent...)})
 	if err != nil {
 		t.Fatalf("second draw: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestNextVariesTheShuffleBucketWhenSeenIsUnchanged(t *testing.T) {
 
 func TestNextOnAnEmptySelectionReturnsAnError(t *testing.T) {
 	svc := play.NewService(play.ServiceOptions{Catalog: testCatalog()})
-	_, _, err := svc.Next(1, play.GameState{
+	_, _, err := svc.Next(1, "", play.GameState{
 		Filter: catalog.Filter{Include: map[string][]string{"kind": {"nothing"}}},
 	})
 	if err == nil {
@@ -249,7 +249,7 @@ func TestNilCatalogDoesNotPanic(t *testing.T) {
 	if got := svc.Available(catalog.Filter{}); len(got) != 0 {
 		t.Fatalf("Available on a nil catalog = %v, want empty", got)
 	}
-	if _, _, err := svc.Next(1, play.GameState{}); err == nil {
+	if _, _, err := svc.Next(1, "", play.GameState{}); err == nil {
 		t.Fatal("Next on a nil catalog succeeded, want an error")
 	}
 	if _, ok := svc.Item("p001"); ok {
